@@ -8,6 +8,7 @@ import { CapacitorHttp } from "@capacitor/core";
 import { nativePlatform } from "@/lib/native";
 import { BUNDLE_VERSION, MANIFEST_URL, parseManifest, planUpdate, type UpdatePlan } from "@/lib/app-update";
 import { ApkUpdater } from "@/lib/apk-updater";
+import { toast } from "sonner";
 
 type ApkState =
   | { phase: "downloading"; percent: number }
@@ -16,6 +17,20 @@ type ApkState =
   | { phase: "failed"; message: string };
 
 const CHECK_GAP_MS = 10 * 60 * 1000;
+const SEEN_KEY = "plotledger:last-version";
+
+/** After an update (OTA or APK) lands, say so once. */
+function announceNewVersion(runningOtaBundle: boolean) {
+  try {
+    const seen = localStorage.getItem(SEEN_KEY);
+    localStorage.setItem(SEEN_KEY, BUNDLE_VERSION);
+    if (seen ? seen !== BUNDLE_VERSION : runningOtaBundle) {
+      toast.success(`Updated to v${BUNDLE_VERSION}`, { description: "Installed automatically.", duration: 5000 });
+    }
+  } catch {
+    // storage unavailable
+  }
+}
 
 async function fetchManifest() {
   // native HTTP: no CORS, follows GitHub's redirect to the asset CDN
@@ -105,13 +120,16 @@ export function UpdatePrompt() {
     };
 
     void (async () => {
+      let runningOta = false;
       try {
         const { CapacitorUpdater } = await import("@capgo/capacitor-updater");
         // React rendered, so this bundle is healthy: keep it.
-        await CapacitorUpdater.notifyAppReady();
+        const ready = await CapacitorUpdater.notifyAppReady();
+        runningOta = ready.bundle.id !== "builtin";
       } catch {
         // plugin missing in an old shell: nothing to confirm
       }
+      announceNewVersion(runningOta);
       void check();
     })();
     const listener = App.addListener("resume", () => void check());
