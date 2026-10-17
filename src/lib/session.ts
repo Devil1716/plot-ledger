@@ -19,8 +19,13 @@ export function profileName(user: User): string {
 }
 
 export function profilePhoto(user: User): string | null {
-  const url = user.photoURL?.trim();
-  return url && url.length <= 2048 ? url : null;
+  const url = (user.photoURL || user.providerData.find((item) => item.providerId === "google.com")?.photoURL)?.trim();
+  return url && url.length <= 2048 ? googlePhotoAtSize(url) : null;
+}
+
+/** Google profile photos end in "=s96-c"; ask for a sharper one for avatars. */
+export function googlePhotoAtSize(url: string, size = 256): string {
+  return /googleusercontent\.com\//.test(url) ? url.replace(/=s\d+(-c)?$/, `=s${size}-c`) : url;
 }
 
 function errorCode(error: unknown): string {

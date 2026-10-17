@@ -5,11 +5,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { collection, doc, onSnapshot, type Timestamp } from "firebase/firestore";
+import { collection, doc, onSnapshot, updateDoc, type Timestamp } from "firebase/firestore";
 import { firebaseReady } from "@/lib/firebase";
 import { computeShares, type ShareRow } from "@/lib/ledger-math";
 import {
@@ -23,6 +24,7 @@ import {
   type UserRecord,
 } from "@/lib/records";
 import { claimAdmin, ensureProfile } from "@/lib/session";
+import { approveAccount } from "@/lib/writes";
 import { signInWithFakeGoogle, signInWithGoogle, signOutEverywhere } from "@/lib/google-sign-in";
 
 interface LedgerContextValue {
@@ -287,6 +289,37 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       unsub();
     };
   }, [isAdmin]);
+
+  // An admin who isn't on the roster yet (e.g. just claimed admin) gets a roster person
+  // made from their Google profile, so the pay flow is there straight away. Admin-only
+  // writes that the rules already allow; tried once per session.
+  const selfLinkTried = useRef(false);
+  useEffect(() => {
+    if (!isAdmin || !uid || !user || !dataReady || selfLinkTried.current) return;
+    const mine = accounts.find((account) => account.uid === uid);
+    if (!mine) return;
+    const myPerson = people.find((person) => person.linkedUid === uid);
+    if (mine.personId && myPerson) {
+      // keep the admin's roster photo in step with their Google photo
+      const photo = mine.photoURL;
+      if (photo && myPerson.photoURL !== photo) {
+        selfLinkTried.current = true;
+        void firebaseReady().then(({ db }) => updateDoc(doc(db, "people", myPerson.id), { photoURL: photo })).catch(() => {});
+      }
+      return;
+    }
+    if (mine.personId) return;
+    selfLinkTried.current = true;
+    void firebaseReady()
+      .then(({ db }) =>
+        myPerson
+          ? approveAccount(db, { uid, name: mine.displayName }, people, accounts, mine, { mode: "link", personId: myPerson.id })
+          : approveAccount(db, { uid, name: mine.displayName }, people, accounts, mine, { mode: "new", role: "contributor" }),
+      )
+      .catch(() => {
+        // leave it to the People screen
+      });
+  }, [isAdmin, uid, user, dataReady, accounts, people]);
 
   const shares = useMemo(
     () =>

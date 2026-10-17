@@ -18,6 +18,7 @@ type ApkState =
 
 const CHECK_GAP_MS = 10 * 60 * 1000;
 const SEEN_KEY = "plotledger:last-version";
+let coldStartApplied = false;
 
 /** After an update (OTA or APK) lands, say so once. */
 function announceNewVersion(runningOtaBundle: boolean) {
@@ -126,6 +127,14 @@ export function UpdatePrompt() {
         // React rendered, so this bundle is healthy: keep it.
         const ready = await CapacitorUpdater.notifyAppReady();
         runningOta = ready.bundle.id !== "builtin";
+        // A bundle downloaded last time is normally swapped in when the app goes to the
+        // background. If the app was killed instead, apply it now, on this cold start.
+        const next = await CapacitorUpdater.getNextBundle();
+        if (next && next.id !== ready.bundle.id && next.status !== "error" && !coldStartApplied) {
+          coldStartApplied = true;
+          await CapacitorUpdater.set({ id: next.id });
+          return;
+        }
       } catch {
         // plugin missing in an old shell: nothing to confirm
       }

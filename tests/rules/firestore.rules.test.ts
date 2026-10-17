@@ -575,6 +575,34 @@ describe("accounts and admin bootstrap", () => {
         createdAt: serverTimestamp(),
       }),
     );
+    // the new admin puts themself on the roster (Google name + photo) and can then pay for themself
+    const batch = writeBatch(verified);
+    batch.set(doc(verified, "people", "p-verified-user"), {
+      name: "Verified",
+      role: "contributor",
+      color: "#22aa88",
+      sortOrder: 0,
+      linkedUid: "verified-user",
+      linkedLabel: "Verified",
+      photoURL: "https://lh3.googleusercontent.com/a/v=s256-c",
+    });
+    batch.update(doc(verified, "users", "verified-user"), { personId: "p-verified-user" });
+    batch.set(doc(collection(verified, "audit")), {
+      action: "create",
+      entity: "person",
+      entityId: "p-verified-user",
+      actorUid: "verified-user",
+      actorName: "Verified",
+      summary: "Approved Verified",
+      at: serverTimestamp(),
+    });
+    await assertSucceeds(batch.commit());
+    await assertSucceeds(
+      setDoc(
+        doc(collection(verified, "payments")),
+        paymentPayload({ personId: "p-verified-user", createdBy: "verified-user", updatedBy: "verified-user" }),
+      ),
+    );
   });
 
   it("lets an admin link a person and add another admin without removing themselves", async () => {

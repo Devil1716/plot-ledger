@@ -36,7 +36,7 @@ function Avatar({ name, color, photoURL, size = "md" }: { name: string; color: s
 const SharesPanelMemo = memo(SharesPanel);
 
 export function Dashboard() {
-  const { people, payments, shares, profile, myPersonId, dataReady } = useLedger();
+  const { people, payments, shares, profile, myPersonId, dataReady, isAdmin } = useLedger();
   const canPay = myPersonId !== null;
   const [open, setOpen] = useState(false);
   const tabActive = useTabActive();
@@ -70,9 +70,19 @@ export function Dashboard() {
       <section className="sheet mx-4 rounded-3xl p-6">
         <h1 className="font-heading text-2xl">Nobody is on the roster yet</h1>
         <p className="text-muted-foreground mt-2 max-w-prose text-sm" data-testid="empty-roster">
-          Open People and approve the members who signed in with Google, starting with yourself. Each approved
-          member can then record their own payments here.
+          {isAdmin
+            ? "Approve the members who signed in with Google on People. Each approved member then records their own payments here."
+            : "The admin hasn't added anyone yet. Payments open here as soon as you're on the roster."}
         </p>
+        {isAdmin ? (
+          <Link
+            href="/people/"
+            data-testid="empty-roster-people"
+            className="mt-4 inline-flex h-11 items-center gap-2 rounded-full bg-[#0b0f1a] px-5 text-sm font-semibold text-white"
+          >
+            Open People
+          </Link>
+        ) : null}
       </section>
     );
   }
