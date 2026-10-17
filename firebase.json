@@ -1,0 +1,45 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "auth": {
+    "providers": {
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "Plot Ledger",
+        "supportEmail": "support@plotshare.local",
+        "authorizedRedirectUris": ["http://localhost", "http://127.0.0.1"]
+      }
+    }
+  },
+  "emulators": {
+    "auth": {
+      "host": "127.0.0.1",
+      "port": 9199
+    },
+    "firestore": {
+      "host": "127.0.0.1",
+      "port": 8180
+    },
+    "ui": {
+      "enabled": true,
+      "host": "127.0.0.1",
+      "port": 4040
+    },
+    "singleProjectMode": true
+  },
+  "apphosting": {
+    "backendId": "plot-ledger",
+    "rootDir": "/",
+    "ignore": [
+      "node_modules",
+      ".git",
+      "firebase-debug.log",
+      "firebase-debug.*.log",
+      "coverage",
+      "playwright-report",
+      "test-results"
+    ]
+  }
+}

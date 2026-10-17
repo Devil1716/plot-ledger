@@ -1,0 +1,278 @@
+rules_version = '2';
+// Prototype rules for a private six-person plot ledger.
+// Signed-in members (a users/{uid} profile) may read the ledger.
+// Only admins listed in settings/access may write.
+// There is no public read or write. Review before pointing this at a real project.
+//
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: settings
+// Document ID: access
+// Fields:
+//   - adminUids: list<string> (required, 1..6 uids, each 8..128 chars)
+//   - createdAt: timestamp (required, immutable)
+// Create: the first signed-in member, and only while the doc is absent,
+//         may create it with adminUids == [their own uid].
+// Update: an existing admin, who must remain in the list.
+//
+// Collection: users
+// Document ID: request.auth.uid
+// Fields:
+//   - email: string (required, must match the auth token, immutable, <= 200)
+//   - displayName: string (required, 1..80)
+//   - personId: string or null (required; null on self-create; admin may link an existing person)
+//   - createdAt: timestamp (required, immutable)
+// Read: the owner or an admin. Emails are not readable by other members.
+// No role field. Admin authority lives only in settings/access.
+//
+// Collection: people
+// Document ID: stable roster id (ananya, rohan, kavita, arjun, meera, suresh)
+// Fields:
+//   - name: string (required, 1..80)
+//   - role: "contributor" | "homeowner"
+//   - color: string #rrggbb
+//   - sortOrder: int 0..20
+//   - linkedUid: string uid or null (must name an existing user when set)
+//   - linkedLabel: string 0..80 (display name only, no email)
+// Clients may update (admin only). Create and delete are denied; the Admin SDK seeds the six people.
+//
+// Collection: payments
+// Document ID: auto-id
+// Fields:
+//   - personId: string (required, existing person, <= 40)
+//   - amountPaise: int (required, > 0, <= 10 crore rupees in paise)
+//   - date: timestamp (required)
+//   - note: string (required, may be empty, <= 500)
+//   - createdBy: string uid (required, must be the signer on create, immutable)
+//   - updatedBy: string uid (required, must be the signer)
+//   - createdAt: timestamp (required, request.time on create, immutable)
+//   - updatedAt: timestamp (required, request.time)
+// Read: members. Write: admin.
+//
+// Collection: audit
+// Document ID: auto-id
+// Fields:
+//   - action: "create" | "update" | "delete"
+//   - entity: "payment" | "person" | "access"
+//   - entityId: string 1..80
+//   - actorUid: string (must be the signer)
+//   - actorName: string (must equal the signer's users/{uid}.displayName)
+//   - summary: string 1..400
+//   - at: timestamp (request.time)
+// Create: admin. Update and delete: denied.
+//
+// Client queries: collection reads of people, payments, and audit with no where/orderBy
+// (sorting is client-side). users is read as a single document by members and as a
+// collection by admins. settings/access is a single-document read.
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function accessPath() {
+      return /databases/$(database)/documents/settings/access;
+    }
+
+    function personPath(personId) {
+      return /databases/$(database)/documents/people/$(personId);
+    }
+
+    function isMember() {
+      return isAuthenticated() && exists(userPath(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return isMember()
+        && exists(accessPath())
+        && request.auth.uid in get(accessPath()).data.adminUids;
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    function isUid(value) {
+      return value is string && value.size() >= 8 && value.size() <= 128;
+    }
+
+    function validAdminUidList(uids) {
+      return uids is list
+        && uids.size() >= 1
+        && uids.size() <= 6
+        && isUid(uids[0])
+        && (uids.size() < 2 || isUid(uids[1]))
+        && (uids.size() < 3 || isUid(uids[2]))
+        && (uids.size() < 4 || isUid(uids[3]))
+        && (uids.size() < 5 || isUid(uids[4]))
+        && (uids.size() < 6 || isUid(uids[5]));
+    }
+
+    function isValidAccess(data) {
+      return data.keys().hasOnly(['adminUids', 'createdAt'])
+        && validAdminUidList(data.adminUids)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidPersonId(personId) {
+      return personId is string
+        && personId.size() > 0
+        && personId.size() <= 40
+        && exists(personPath(personId));
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasOnly(['email', 'displayName', 'personId', 'createdAt'])
+        && data.email is string
+        && data.email.size() > 3
+        && data.email.size() <= 200
+        && data.displayName is string
+        && data.displayName.size() > 0
+        && data.displayName.size() <= 80
+        && data.createdAt is timestamp
+        && (data.personId == null || isValidPersonId(data.personId));
+    }
+
+    function isValidPerson(data) {
+      return data.keys().hasOnly(['name', 'role', 'color', 'sortOrder', 'linkedUid', 'linkedLabel'])
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 80
+        && data.role in ['contributor', 'homeowner']
+        && data.color is string
+        && data.color.matches('^#[0-9a-fA-F]{6}$')
+        && data.sortOrder is int
+        && data.sortOrder >= 0
+        && data.sortOrder <= 20
+        && data.linkedLabel is string
+        && data.linkedLabel.size() <= 80
+        && (
+          data.linkedUid == null
+          || (isUid(data.linkedUid) && exists(userPath(data.linkedUid)))
+        );
+    }
+
+    function isValidPayment(data) {
+      return data.keys().hasOnly(['personId', 'amountPaise', 'date', 'note', 'createdBy', 'createdAt', 'updatedBy', 'updatedAt'])
+        && isValidPersonId(data.personId)
+        && data.amountPaise is int
+        && data.amountPaise > 0
+        && data.amountPaise <= 10000000000
+        && data.date is timestamp
+        && data.note is string
+        && data.note.size() <= 500
+        && isUid(data.createdBy)
+        && isUid(data.updatedBy)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAudit(data) {
+      return data.keys().hasOnly(['action', 'entity', 'entityId', 'actorUid', 'actorName', 'summary', 'at'])
+        && data.action in ['create', 'update', 'delete']
+        && data.entity in ['payment', 'person', 'access']
+        && data.entityId is string
+        && data.entityId.size() > 0
+        && data.entityId.size() <= 80
+        && data.actorUid == request.auth.uid
+        && data.actorName is string
+        && data.actorName.size() > 0
+        && data.actorName.size() <= 80
+        && data.actorName == get(userPath(request.auth.uid)).data.displayName
+        && data.summary is string
+        && data.summary.size() > 0
+        && data.summary.size() <= 400
+        && data.at is timestamp;
+    }
+
+    match /settings/access {
+      allow read: if isMember();
+
+      allow create: if isMember()
+        && request.auth.token.email is string
+        && !exists(accessPath())
+        && isValidAccess(request.resource.data)
+        && request.resource.data.adminUids.size() == 1
+        && request.resource.data.adminUids[0] == request.auth.uid
+        && request.resource.data.createdAt == request.time;
+
+      allow update: if isAdmin()
+        && isValidAccess(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.auth.uid in request.resource.data.adminUids;
+
+      allow delete: if false;
+    }
+
+    match /users/{uid} {
+      allow get: if isOwner(uid) || isAdmin();
+      allow list: if isAdmin();
+
+      allow create: if isOwner(uid)
+        && request.auth.token.email is string
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.personId == null
+        && request.resource.data.createdAt == request.time
+        && isValidUser(request.resource.data);
+
+      allow update: if isValidUser(request.resource.data)
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.createdAt == resource.data.createdAt
+        && (
+          (isOwner(uid) && request.resource.data.personId == resource.data.personId)
+          || isAdmin()
+        );
+
+      allow delete: if false;
+    }
+
+    match /people/{personId} {
+      allow read: if isMember();
+      allow create: if false;
+      allow delete: if false;
+      allow update: if isAdmin() && isValidPerson(request.resource.data);
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isMember();
+
+      allow create: if isAdmin()
+        && isValidPayment(request.resource.data)
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if isAdmin()
+        && isValidPayment(request.resource.data)
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
+
+      allow delete: if isAdmin();
+    }
+
+    match /audit/{auditId} {
+      allow read: if isMember();
+      allow create: if isAdmin()
+        && isValidAudit(request.resource.data)
+        && request.resource.data.at == request.time;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
