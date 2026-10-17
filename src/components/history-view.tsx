@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { listVariants, motion, sideItemVariants } from "@/components/motion-bits";
 import { toast } from "sonner";
 import { PaymentDialog } from "@/components/payment-dialog";
 import { authErrorMessage, useLedger } from "@/components/ledger-provider";
@@ -72,15 +73,15 @@ export function HistoryView() {
           </p>
         </section>
       ) : (
-        <ul className="grid gap-3" data-testid="history-list">
+        <motion.ul variants={listVariants} initial="hidden" animate="show" className="grid gap-3" data-testid="history-list">
           {visible.map((payment) => {
             const person = people.find((item) => item.id === payment.personId);
             return (
-              <li key={payment.id} data-testid={`payment-${payment.id}`} className="bg-card rounded-xl p-4 ring-1 ring-foreground/10">
+              <motion.li variants={sideItemVariants} key={payment.id} data-testid={`payment-${payment.id}`} className="bg-card rounded-xl p-4 ring-1 ring-foreground/10">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="size-2.5 rounded-full" style={{ background: person?.color ?? "#8a8175" }} />
+                      <span className="size-2.5 rounded-full" style={{ background: person?.color ?? "#94A3B8" }} />
                       <h2 className="font-medium">{person?.name ?? "Unknown person"}</h2>
                       {person?.role === "homeowner" ? <Badge variant="outline">Homeowner</Badge> : null}
                     </div>
@@ -99,10 +100,10 @@ export function HistoryView() {
                     </div>
                   ) : null}
                 </div>
-              </li>
+              </motion.li>
             );
           })}
-        </ul>
+        </motion.ul>
       )}
 
       <section>

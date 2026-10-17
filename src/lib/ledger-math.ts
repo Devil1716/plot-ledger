@@ -168,7 +168,7 @@ export function plotBands(rows: PlotBandInput[]): PlotBand[] {
       {
         id: "unallocated",
         name: "Unallocated",
-        color: "#e7dcc8",
+        color: "#E4E7ED",
         y: 0,
         height: LAND_DEPTH_FT,
         sqftHundredths: SQFT_HUNDREDTHS_TOTAL,

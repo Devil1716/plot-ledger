@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Outfit } from "next/font/google";
 import { LedgerProvider } from "@/components/ledger-provider";
+import { NativeShell } from "@/components/native-shell";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
@@ -22,13 +23,16 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#1f4d3a",
+  // draw under the notch / home indicator; padding comes from --safe-top/--safe-bottom
+  viewportFit: "cover",
+  themeColor: "#0b0d10",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${outfit.variable} ${fraunces.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
+        <NativeShell />
         <LedgerProvider>
           {children}
           <Toaster position="top-center" />

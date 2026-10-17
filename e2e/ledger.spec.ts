@@ -13,13 +13,21 @@ async function signIn(page: Page, email: string, password: string) {
 
 async function addPayment(page: Page, person: string, amount: string, date: string, note: string) {
   await page.getByTestId("add-payment").click();
-  await page.getByTestId("payment-person").click();
-  await page.getByRole("option", { name: person }).click();
-  await page.getByLabel("Amount (INR)").fill(amount);
-  await page.getByLabel("Date").fill(date);
-  await page.getByLabel("Note").fill(note);
-  await page.getByTestId("payment-save").click();
-  await expect(page.getByRole("dialog")).toBeHidden();
+  const flow = page.getByTestId("pay-flow");
+  await expect(flow.getByRole("heading", { name: "Who paid?" })).toBeVisible();
+  await flow.getByRole("button", { name: new RegExp(`^${person.split(" · ")[0]},`) }).click();
+  for (const char of amount.replace(/,/g, "")) {
+    await flow.getByTestId(char === "." ? "key-dot" : `key-${char}`).click();
+  }
+  await expect(flow.getByTestId("pay-amount")).toContainText(`₹${amount}`);
+  await flow.getByLabel("Date").fill(date);
+  await flow.getByLabel("Note").fill(note);
+  const slider = flow.getByRole("slider", { name: `slide to pay ₹${amount}` });
+  await expect(slider).toBeVisible();
+  await slider.press("Enter");
+  await expect(flow.getByTestId("payment-done")).toContainText(`₹${amount}`);
+  await flow.getByTestId("payment-done").click();
+  await expect(page.getByTestId("pay-flow")).toHaveCount(0);
 }
 
 test("admin records payments and a member sees the updated shares", async ({ browser }) => {

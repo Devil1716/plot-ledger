@@ -10,6 +10,10 @@ The homeowner's payments are stored, shown in the history, and counted in the to
 
 Signed-in members can see every share and the full history. An admin (the first account, then anyone they add) can add, edit, and delete payments, edit the roster, and link logins to people. Every change writes an audit entry.
 
+## Download
+
+Android app (APK): **[latest release](https://github.com/Devil1716/plot-ledger/releases/latest)**. Download the `.apk` from the release assets and open it on your phone (allow installs from your browser when Android asks). iOS builds need a Mac with Xcode; see "Native apps" below.
+
 ## Local setup
 
 Requirements: Node 22 (see `.nvmrc`), pnpm 10, and Java 21+ for the Firebase emulators.
@@ -82,3 +86,33 @@ npx -y firebase-tools@latest deploy --only apphosting --project YOUR_PROJECT_ID
 ```
 
 `NEXT_PUBLIC_*` values are baked in at build time. Set `NEXT_PUBLIC_USE_EMULATORS` to `false` for that build. Do not commit `.env.local`.
+
+## Native apps (iOS + Android)
+
+The same Next.js code ships as native apps through [Capacitor 8](https://capacitorjs.com/docs). `pnpm build:native` builds a static export (`NEXT_OUTPUT=export` → `out/`) and copies it into `android/` and `ios/`. The app is fully client-side (Firebase Auth + Firestore in the browser, no API routes or middleware), so the static bundle is complete. Cache Components / partial prefetching are switched off for that build only, because static export can't use PPR.
+
+- App id `com.devil1716.plotledger`, name **Plot Ledger** (`capacitor.config.ts`).
+- Haptics go through `@capacitor/haptics` in the apps (iOS Taptic Engine; Safari has no `navigator.vibrate`) and fall back to `navigator.vibrate` on the web (`src/lib/native.ts`).
+- Edge to edge: Capacitor's bundled SystemBars plugin (`insetsHandling: "css"`) plus `viewport-fit=cover`; the UI pads with `--safe-top` / `--safe-bottom` (globals.css). Splash screen via `@capacitor/splash-screen`, hidden once React paints.
+- Icons and splash screens come from `assets/` (`pnpm assets:generate`).
+
+### Android (debug APK)
+
+Needs JDK 21 and the Android SDK (platform 36, build-tools 36) with `ANDROID_HOME` set.
+
+```bash
+pnpm emulators            # Firebase emulators on the dev machine
+pnpm seed:demo
+pnpm android:apk          # → android/app/build/outputs/apk/debug/app-debug.apk
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Inside the Android emulator, `127.0.0.1` is the phone itself, so the app rewrites the emulator host to `10.0.2.2` (the host machine). For a physical phone on the same Wi‑Fi set `NEXT_PUBLIC_ANDROID_EMULATOR_HOST=<your LAN IP>` and start the Firebase emulators with `host: "0.0.0.0"`. Debug builds allow cleartext HTTP only to `10.0.2.2`, `127.0.0.1` and `localhost` (`android/app/src/debug/res/xml/network_security_config.xml`).
+
+### iOS
+
+`ios/` is a ready Xcode project (Swift Package Manager). Building, signing and installing require a Mac with Xcode and an Apple Developer account (a free account can sideload to your own phone for 7 days; App Store / TestFlight needs the paid program). On the Mac: `pnpm install && pnpm build:native && npx cap open ios`, pick your team under Signing & Capabilities, and run. The iOS simulator shares the Mac's loopback, so the emulator host stays `127.0.0.1`.
+
+### Real phones need a real Firebase project
+
+The demo project only exists inside the local emulators. For the apps to work on real phones away from the dev machine, follow "Plug in a real Firebase project" above, put that config in `.env.local` with `NEXT_PUBLIC_USE_EMULATORS=false`, and build with `CAP_USE_EMULATORS=false pnpm build:native` (turns off cleartext / mixed content). `localhost` must stay in Firebase Auth's authorized domains, because the apps are served from `https://localhost` (Android) and `capacitor://localhost` (iOS). Release builds also need your own Android signing keystore and an Apple distribution certificate.

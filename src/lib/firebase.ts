@@ -7,6 +7,7 @@ import {
   type Auth,
 } from "firebase/auth";
 import { connectFirestoreEmulator, getFirestore, type Firestore } from "firebase/firestore";
+import { emulatorHost } from "@/lib/native";
 
 export interface FirebaseServices {
   app: FirebaseApp;
@@ -56,12 +57,12 @@ export function getFirebase(): FirebaseServices {
   const db = getFirestore(app);
 
   if (usingEmulators()) {
-    connectAuthEmulator(auth, process.env.NEXT_PUBLIC_AUTH_EMULATOR_URL ?? "http://127.0.0.1:9199", {
-      disableWarnings: true,
-    });
+    const authUrl = new URL(process.env.NEXT_PUBLIC_AUTH_EMULATOR_URL ?? "http://127.0.0.1:9199");
+    authUrl.hostname = emulatorHost(authUrl.hostname);
+    connectAuthEmulator(auth, authUrl.origin, { disableWarnings: true });
     connectFirestoreEmulator(
       db,
-      process.env.NEXT_PUBLIC_FIRESTORE_EMULATOR_HOST ?? "127.0.0.1",
+      emulatorHost(process.env.NEXT_PUBLIC_FIRESTORE_EMULATOR_HOST ?? "127.0.0.1"),
       Number(process.env.NEXT_PUBLIC_FIRESTORE_EMULATOR_PORT ?? "8180"),
     );
   }

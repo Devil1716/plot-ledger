@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { listVariants, motion, sideItemVariants } from "@/components/motion-bits";
 import { toast } from "sonner";
 import { authErrorMessage, useLedger } from "@/components/ledger-provider";
 import { Badge } from "@/components/ui/badge";
@@ -58,11 +59,11 @@ export function PeopleView() {
           person. Everyone signed in can see this roster.
         </p>
       </header>
-      <ul className="grid gap-3">
+      <motion.ul variants={listVariants} initial="hidden" animate="show" className="grid gap-3">
         {ledger.people.map((person) => {
           const share = ledger.shares.find((item) => item.personId === person.id);
           return (
-            <li key={person.id} className="bg-card flex flex-wrap items-center gap-3 rounded-xl p-4 ring-1 ring-foreground/10">
+            <motion.li variants={sideItemVariants} key={person.id} className="bg-card flex flex-wrap items-center gap-3 rounded-xl p-4 ring-1 ring-foreground/10">
               <span className="size-3 rounded-full" style={{ background: person.color }} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
@@ -80,10 +81,10 @@ export function PeopleView() {
                   Edit
                 </Button>
               ) : null}
-            </li>
+            </motion.li>
           );
         })}
-      </ul>
+      </motion.ul>
 
       {ledger.isAdmin ? (
         <section className="bg-card rounded-xl p-4 ring-1 ring-foreground/10">

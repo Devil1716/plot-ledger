@@ -1,59 +1,121 @@
 "use client";
 
-import { plotBands } from "@/lib/ledger-math";
-import { formatSqftHundredths, LAND_DEPTH_FT, LAND_WIDTH_FT } from "@/lib/ledger-math";
-import type { PersonRecord } from "@/lib/records";
+import { motion } from "motion/react";
+import { formatSqftHundredths, LAND_DEPTH_FT, LAND_WIDTH_FT, plotBands } from "@/lib/ledger-math";
 import type { ShareRow } from "@/lib/ledger-math";
+import type { PersonRecord } from "@/lib/records";
 
-export function LandPlot({ people, shares }: { people: PersonRecord[]; shares: ShareRow[] }) {
+/**
+ * Plot drawing: a rounded 54 × 105 ft rectangle split into depth bands, one per contributor.
+ * `highlightId` dims every other band; `compact` drops labels and dimension marks for the row mini-map.
+ */
+export function LandPlot({
+  people,
+  shares,
+  highlightId = null,
+  compact = false,
+  onSelect,
+}: {
+  people: PersonRecord[];
+  shares: ShareRow[];
+  highlightId?: string | null;
+  compact?: boolean;
+  onSelect?: (id: string) => void;
+}) {
   const bands = plotBands(
     shares.map((share) => {
       const person = people.find((item) => item.id === share.personId);
-      return {
-        ...share,
-        name: person?.name ?? share.personId,
-        color: person?.color ?? "#8a8175",
-      };
+      return { ...share, name: person?.name ?? share.personId, color: person?.color ?? "#94A3B8" };
     }),
   );
   const label = bands.map((band) => `${band.name} ${formatSqftHundredths(band.sqftHundredths)} sq ft`).join(", ");
+  const pad = compact ? 0 : 9;
+  const W = LAND_WIDTH_FT + pad * 2;
+  const H = LAND_DEPTH_FT + (compact ? 0 : pad * 2);
 
   return (
-    <div className="grid gap-4 sm:grid-cols-[minmax(0,180px)_1fr] sm:items-center">
-      <div>
-        <p className="text-muted-foreground mb-1 text-center text-[11px] tracking-[0.14em] uppercase">Rear · 54 ft</p>
-        <svg
-          viewBox={`0 0 ${LAND_WIDTH_FT} ${LAND_DEPTH_FT}`}
-          className="mx-auto aspect-[54/105] w-full max-w-[180px] rounded-md shadow-sm"
-          role="img"
-          aria-label={`Plot split: ${label}`}
-        >
-          {bands.map((band) => (
-            <rect key={band.id} x="0" y={band.y} width={LAND_WIDTH_FT} height={band.height} fill={band.color} />
-          ))}
-          <rect
-            x="0.4"
-            y="0.4"
-            width={LAND_WIDTH_FT - 0.8}
-            height={LAND_DEPTH_FT - 0.8}
-            fill="none"
-            stroke="#1c1915"
-            strokeWidth="0.8"
-          />
-        </svg>
-        <p className="text-muted-foreground mt-1 text-center text-[11px] tracking-[0.14em] uppercase">
-          Road · {LAND_DEPTH_FT} ft deep
-        </p>
-      </div>
-      <ul className="space-y-2">
-        {bands.map((band) => (
-          <li key={band.id} className="flex items-center gap-2 text-sm">
-            <span className="size-3 shrink-0 rounded-sm" style={{ background: band.color }} />
-            <span className="min-w-0 flex-1 truncate">{band.name}</span>
-            <span className="tabular-nums">{formatSqftHundredths(band.sqftHundredths)} sq ft</span>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <svg
+      viewBox={`${-pad - (compact ? 0 : 3)} ${-pad} ${W + (compact ? 0 : 3)} ${H}`}
+      className={compact ? "h-full w-auto" : "mx-auto block h-auto w-full max-w-[220px]"}
+      role="img"
+      aria-label={`Plot split, ${LAND_WIDTH_FT} by ${LAND_DEPTH_FT} feet: ${label}`}
+    >
+      <defs>
+        <clipPath id={compact ? "plot-clip-c" : "plot-clip"}>
+          <rect x="0" y="0" width={LAND_WIDTH_FT} height={LAND_DEPTH_FT} rx="5" />
+        </clipPath>
+        <pattern id="plot-grid" width="6" height="6" patternUnits="userSpaceOnUse">
+          <path d="M6 0H0V6" fill="none" stroke="#0b0f1a" strokeOpacity="0.07" strokeWidth="0.3" />
+        </pattern>
+      </defs>
+      <g clipPath={`url(#${compact ? "plot-clip-c" : "plot-clip"})`}>
+        <rect x="0" y="0" width={LAND_WIDTH_FT} height={LAND_DEPTH_FT} fill="#eef0f4" />
+        {bands.map((band, index) => {
+          const dim = highlightId !== null && band.id !== highlightId;
+          return (
+            <motion.g
+              key={band.id}
+              initial={{ opacity: 0, x: -LAND_WIDTH_FT }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ type: "spring", stiffness: 160, damping: 20, delay: 0.1 + index * 0.12 }}
+              onClick={onSelect ? () => onSelect(band.id) : undefined}
+              style={{ cursor: onSelect ? "pointer" : undefined }}
+            >
+              <motion.rect
+                x="0"
+                y={band.y}
+                width={LAND_WIDTH_FT}
+                height={band.height}
+                fill={band.color}
+                animate={{ opacity: dim ? 0.22 : 1 }}
+                transition={{ duration: 0.3 }}
+              />
+              {index > 0 ? <line x1="0" x2={LAND_WIDTH_FT} y1={band.y} y2={band.y} stroke="#f7f8fa" strokeWidth="0.9" /> : null}
+              {!compact && band.height >= 9 ? (
+                <text
+                  x={LAND_WIDTH_FT / 2}
+                  y={band.y + band.height / 2}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fill="#0b0f1a"
+                  fillOpacity={dim ? 0.35 : 0.85}
+                  style={{ fontSize: 3.6, fontWeight: 600 }}
+                >
+                  {band.name.split(" ")[0]} · {formatSqftHundredths(band.sqftHundredths).replace(/\.00$/, "")}
+                </text>
+              ) : null}
+            </motion.g>
+          );
+        })}
+        <rect x="0" y="0" width={LAND_WIDTH_FT} height={LAND_DEPTH_FT} fill="url(#plot-grid)" pointerEvents="none" />
+      </g>
+      <rect x="0.3" y="0.3" width={LAND_WIDTH_FT - 0.6} height={LAND_DEPTH_FT - 0.6} rx="5" fill="none" stroke="#0b0f1a" strokeOpacity="0.18" strokeWidth="0.6" />
+      {!compact ? (
+        <g fill="#5a6478" style={{ fontSize: 3.4 }} stroke="#94a3b8" strokeWidth="0.35">
+          <line x1="0" x2={LAND_WIDTH_FT} y1={-4} y2={-4} />
+          <line x1="0" x2="0" y1={-5.5} y2={-2.5} />
+          <line x1={LAND_WIDTH_FT} x2={LAND_WIDTH_FT} y1={-5.5} y2={-2.5} />
+          <text x={LAND_WIDTH_FT / 2} y={-5.6} textAnchor="middle" stroke="none">
+            {LAND_WIDTH_FT} ft · rear
+          </text>
+          <line x1={LAND_WIDTH_FT + 4} x2={LAND_WIDTH_FT + 4} y1="0" y2={LAND_DEPTH_FT} />
+          <line x1={LAND_WIDTH_FT + 2.5} x2={LAND_WIDTH_FT + 5.5} y1="0" y2="0" />
+          <line x1={LAND_WIDTH_FT + 2.5} x2={LAND_WIDTH_FT + 5.5} y1={LAND_DEPTH_FT} y2={LAND_DEPTH_FT} />
+          <text
+            x={LAND_WIDTH_FT + 7.5}
+            y={LAND_DEPTH_FT / 2}
+            textAnchor="middle"
+            stroke="none"
+            transform={`rotate(90 ${LAND_WIDTH_FT + 7.5} ${LAND_DEPTH_FT / 2})`}
+          >
+            {LAND_DEPTH_FT} ft deep
+          </text>
+          <text x={LAND_WIDTH_FT / 2} y={LAND_DEPTH_FT + 6} textAnchor="middle" stroke="none">
+            road
+          </text>
+        </g>
+      ) : null}
+    </svg>
   );
 }

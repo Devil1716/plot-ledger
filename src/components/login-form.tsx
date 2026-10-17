@@ -1,5 +1,6 @@
 "use client";
 
+import { MotionConfig, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { authErrorMessage, useLedger } from "@/components/ledger-provider";
@@ -47,16 +48,24 @@ export function LoginForm() {
   }
 
   return (
-    <div className="mx-auto grid min-h-screen w-full max-w-5xl items-center gap-8 px-4 py-10 md:grid-cols-2">
-      <section>
-        <p className="text-muted-foreground text-xs tracking-[0.18em] uppercase">Shared ground</p>
-        <h1 className="font-heading mt-2 text-4xl leading-tight sm:text-5xl">Who owns how much of the plot</h1>
-        <p className="text-muted-foreground mt-4 max-w-md text-base">
+    <MotionConfig reducedMotion="user">
+    <div className="app-dark relative overflow-hidden">
+      <motion.div
+        aria-hidden
+        className="pointer-events-none absolute -top-40 left-1/2 size-[36rem] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgb(52_211_153/0.28),transparent_65%)]"
+        animate={{ scale: [1, 1.25, 1], opacity: [0.6, 1, 0.6], x: ["-50%", "-40%", "-50%"] }}
+        transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+      />
+    <div className="mx-auto grid min-h-screen w-full max-w-5xl items-center gap-8 px-4 pt-[calc(2.5rem+var(--safe-top))] pb-[calc(2.5rem+var(--safe-bottom))] md:grid-cols-2">
+      <motion.section className="relative text-white" initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 150, damping: 16 }}>
+        <p className="text-xs tracking-[0.18em] text-white/65 uppercase">Plot Ledger</p>
+        <h1 className="mt-2 text-4xl leading-tight font-semibold tracking-tight sm:text-5xl">Who owns how much of the plot</h1>
+        <p className="mt-4 max-w-md text-base text-white/70">
           The target is ₹1.20 crore for 5,670 sq ft. Contributor ownership follows what each contributor paid.
           The homeowner&apos;s money is recorded, and their share stays at zero.
         </p>
-      </section>
-      <form onSubmit={(event) => void onSubmit(event)} className="bg-card grid gap-4 rounded-2xl p-5 ring-1 ring-foreground/10">
+      </motion.section>
+      <motion.form onSubmit={(event) => void onSubmit(event)} className="sheet relative grid gap-4 rounded-[2rem] p-6" initial={{ opacity: 0, y: 120, scale: 0.9, rotate: -2 }} animate={{ opacity: 1, y: 0, scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 140, damping: 14, delay: 0.15 }}>
         <div>
           <h2 className="font-heading text-2xl">{mode === "create" ? "Create an account" : "Sign in"}</h2>
           <p className="text-muted-foreground mt-1 text-sm">Your session stays on this browser.</p>
@@ -127,7 +136,9 @@ export function LoginForm() {
             </p>
           </div>
         ) : null}
-      </form>
+      </motion.form>
     </div>
+    </div>
+    </MotionConfig>
   );
 }

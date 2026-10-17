@@ -9,7 +9,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-  --font-heading: var(--font-fraunces), ui-serif, Georgia, serif;
+  --font-heading: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -49,38 +49,47 @@
 }
 
 :root {
-  --background: oklch(0.965 0.018 85);
-  --foreground: oklch(0.24 0.02 55);
-  --card: oklch(0.99 0.008 90);
-  --card-foreground: oklch(0.24 0.02 55);
-  --popover: oklch(0.99 0.008 90);
-  --popover-foreground: oklch(0.24 0.02 55);
-  --primary: oklch(0.38 0.06 155);
-  --primary-foreground: oklch(0.97 0.012 90);
-  --secondary: oklch(0.93 0.02 82);
-  --secondary-foreground: oklch(0.28 0.03 55);
-  --muted: oklch(0.94 0.016 85);
-  --muted-foreground: oklch(0.46 0.02 60);
-  --accent: oklch(0.9 0.035 78);
-  --accent-foreground: oklch(0.28 0.03 55);
-  --destructive: oklch(0.5 0.14 35);
-  --border: oklch(0.86 0.02 75);
-  --input: oklch(0.86 0.02 75);
-  --ring: oklch(0.45 0.06 155);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* safe-area insets: Capacitor's SystemBars injects --safe-area-inset-* on old
+     Android WebViews; everywhere else env() is correct (0 in desktop browsers) */
+  --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --ink-900: #0b0f1a;
+  --ink-800: #121829;
+  --ink-700: #1b2338;
+  --mint: #34d399;
+  --mint-ink: #047857;
+  --background: #f7f8fa;
+  --foreground: #0f1524;
+  --card: #ffffff;
+  --card-foreground: #0f1524;
+  --popover: #ffffff;
+  --popover-foreground: #0f1524;
+  --primary: #121829;
+  --primary-foreground: #f7f8fa;
+  --secondary: #eef0f4;
+  --secondary-foreground: #121829;
+  --muted: #eef0f4;
+  --muted-foreground: #5a6478;
+  --accent: #e7f8f0;
+  --accent-foreground: #065f46;
+  --destructive: #c2410c;
+  --border: #e4e7ed;
+  --input: #dfe3ea;
+  --ring: #34d399;
+  --chart-1: #7aa7f5;
+  --chart-2: #f29a85;
+  --chart-3: #ebc06c;
+  --chart-4: #a996f2;
+  --chart-5: #e38db4;
+  --radius: 0.75rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0f1524;
+  --sidebar-primary: #121829;
+  --sidebar-primary-foreground: #f7f8fa;
+  --sidebar-accent: #eef0f4;
+  --sidebar-accent-foreground: #121829;
+  --sidebar-border: #e4e7ed;
+  --sidebar-ring: #34d399;
 }
 
 .dark {
@@ -123,11 +132,74 @@
   }
   body {
     @apply text-foreground;
-    background:
-      radial-gradient(900px 420px at 0% -10%, oklch(0.9 0.045 80 / 0.75), transparent 55%),
-      var(--background);
+    background: var(--ink-900);
   }
   html {
     @apply font-sans;
   }
+}
+/* v3 ink + mint */
+.app-dark {
+  background:
+    radial-gradient(640px 360px at 90% -8%, rgb(52 211 153 / 0.14), transparent 62%),
+    radial-gradient(560px 380px at -10% 0%, rgb(122 167 245 / 0.12), transparent 60%),
+    linear-gradient(180deg, var(--ink-900) 0%, var(--ink-800) 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+.sheet {
+  background: var(--background);
+  color: var(--foreground);
+  border: 1px solid rgb(255 255 255 / 0.06);
+  box-shadow: 0 -12px 48px rgb(3 6 14 / 0.45);
+}
+.glass {
+  background: linear-gradient(135deg, rgb(255 255 255 / 0.09), rgb(255 255 255 / 0.03));
+  backdrop-filter: blur(16px);
+  border: 1px solid rgb(255 255 255 / 0.1);
+}
+.tile {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+}
+
+[data-dim="true"] > * {
+  opacity: 0.45;
+}
+[data-dim] > * {
+  transition: opacity 0.3s ease;
+}
+
+/* slide-to-confirm label glint */
+.slide-glint {
+  color: transparent;
+  background: linear-gradient(105deg, rgb(255 255 255 / 0.42) 38%, #ffffff 50%, rgb(255 255 255 / 0.42) 62%);
+  background-size: 260% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: slide-glint 3.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes slide-glint {
+  from { background-position: 130% 0; }
+  to { background-position: -30% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .slide-glint { animation: none; background: none; color: rgb(255 255 255 / 0.8); }
+}
+
+/* inside the iOS / Android app: feel native, not like a web page */
+html.native {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  overscroll-behavior: none;
+}
+html.native body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+html.native input,
+html.native textarea {
+  -webkit-user-select: text;
+  user-select: text;
 }

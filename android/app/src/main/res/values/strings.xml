@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Plot Ledger</string>
+    <string name="title_activity_main">Plot Ledger</string>
+    <string name="package_name">com.devil1716.plotledger</string>
+    <string name="custom_url_scheme">com.devil1716.plotledger</string>
+</resources>

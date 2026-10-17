@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "motion/react";
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatInrFromPaise, formatPercentHundredths } from "@/lib/ledger-math";
 import type { ShareRow } from "@/lib/ledger-math";
@@ -13,7 +14,7 @@ function rows(people: PersonRecord[], shares: ShareRow[]) {
         id: share.personId,
         name: person?.name.split(" ")[0] ?? share.personId,
         fullName: person?.name ?? share.personId,
-        color: person?.color ?? "#8a8175",
+        color: person?.color ?? "#94A3B8",
         role: share.role,
         amountPaise: share.amountPaise,
         percentHundredths: share.percentHundredths,
@@ -29,7 +30,7 @@ export function ShareCharts({ people, shares }: { people: PersonRecord[]; shares
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <section className="bg-card rounded-xl p-4 ring-1 ring-foreground/10">
+      <section className="tile p-4">
         <h2 className="font-heading text-lg">Ownership</h2>
         <p className="text-muted-foreground mb-3 text-sm">Contributor payments only. The homeowner is not in this pie.</p>
         {ownership.length === 0 ? (
@@ -37,10 +38,16 @@ export function ShareCharts({ people, shares }: { people: PersonRecord[]; shares
             No contributor payments yet, so every share is 0%.
           </p>
         ) : (
-          <div className="h-64">
+          <motion.div
+            className="h-64"
+            initial={{ rotate: -120, scale: 0.6, opacity: 0 }}
+            whileInView={{ rotate: 0, scale: 1, opacity: 1 }}
+            viewport={{ once: true, amount: 0.4 }}
+            transition={{ type: "spring", stiffness: 110, damping: 14 }}
+          >
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={ownership} dataKey="percentHundredths" nameKey="fullName" innerRadius={52} outerRadius={84} isAnimationActive={false} stroke="#f7f1e6">
+                <Pie data={ownership} dataKey="percentHundredths" nameKey="fullName" innerRadius={52} outerRadius={84} isAnimationActive animationDuration={1100} animationBegin={200} animationEasing="ease-out" stroke="#ffffff" strokeWidth={2}>
                   {ownership.map((entry) => (
                     <Cell key={entry.id} fill={entry.color} />
                   ))}
@@ -50,10 +57,10 @@ export function ShareCharts({ people, shares }: { people: PersonRecord[]; shares
                 />
               </PieChart>
             </ResponsiveContainer>
-          </div>
+          </motion.div>
         )}
       </section>
-      <section className="bg-card rounded-xl p-4 ring-1 ring-foreground/10">
+      <section className="tile p-4">
         <h2 className="font-heading text-lg">Amount paid</h2>
         <p className="text-muted-foreground mb-3 text-sm">Everyone&apos;s payments, including the homeowner.</p>
         {paid.length === 0 ? (
@@ -61,20 +68,26 @@ export function ShareCharts({ people, shares }: { people: PersonRecord[]; shares
             Payments will stack up here once an admin records them.
           </p>
         ) : (
-          <div className="h-64">
+          <motion.div
+            className="h-64 origin-bottom"
+            initial={{ scaleY: 0.2, opacity: 0 }}
+            whileInView={{ scaleY: 1, opacity: 1 }}
+            viewport={{ once: true, amount: 0.4 }}
+            transition={{ type: "spring", stiffness: 140, damping: 13 }}
+          >
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={paid} margin={{ left: 8, right: 8, top: 8 }}>
-                <XAxis dataKey="name" tickLine={false} axisLine={false} />
+                <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: "#5a6478", fontSize: 12 }} />
                 <YAxis hide />
                 <Tooltip formatter={(value) => formatInrFromPaise(Number(value ?? 0))} />
-                <Bar dataKey="amountPaise" radius={6} isAnimationActive={false}>
+                <Bar dataKey="amountPaise" radius={8} isAnimationActive animationDuration={1100} animationBegin={200} animationEasing="ease-out">
                   {paid.map((entry) => (
-                    <Cell key={entry.id} fill={entry.color} fillOpacity={entry.role === "homeowner" ? 0.45 : 1} />
+                    <Cell key={entry.id} fill={entry.color} fillOpacity={1} />
                   ))}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
-          </div>
+          </motion.div>
         )}
       </section>
     </div>

@@ -9,12 +9,12 @@ export interface RosterPerson {
 }
 
 export const ROSTER: readonly RosterPerson[] = [
-  { id: "ananya", name: "Ananya Iyer", role: "contributor", color: "#1f4d3a", sortOrder: 0 },
-  { id: "rohan", name: "Rohan Mehta", role: "contributor", color: "#9a4a2a", sortOrder: 1 },
-  { id: "kavita", name: "Kavita Shah", role: "contributor", color: "#c4a15a", sortOrder: 2 },
-  { id: "arjun", name: "Arjun Nair", role: "contributor", color: "#3d5a80", sortOrder: 3 },
-  { id: "meera", name: "Meera Krishnan", role: "contributor", color: "#6b4c7a", sortOrder: 4 },
-  { id: "suresh", name: "Suresh Krishnan", role: "homeowner", color: "#8a8175", sortOrder: 5 },
+  { id: "ananya", name: "Ananya Iyer", role: "contributor", color: "#7AA7F5", sortOrder: 0 },
+  { id: "rohan", name: "Rohan Mehta", role: "contributor", color: "#F29A85", sortOrder: 1 },
+  { id: "kavita", name: "Kavita Shah", role: "contributor", color: "#EBC06C", sortOrder: 2 },
+  { id: "arjun", name: "Arjun Nair", role: "contributor", color: "#A996F2", sortOrder: 3 },
+  { id: "meera", name: "Meera Krishnan", role: "contributor", color: "#E38DB4", sortOrder: 4 },
+  { id: "suresh", name: "Suresh Krishnan", role: "homeowner", color: "#94A3B8", sortOrder: 5 },
 ];
 
 export const DEMO_PROJECT_ID = "demo-plot-ledger";
