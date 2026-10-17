@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
@@ -30,24 +31,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     lastNavIndex = navIndex;
   }, [navIndex]);
-  const initials = (profile?.displayName ?? "?")
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
 
   return (
     <MotionConfig reducedMotion="user">
     <div className="app-dark min-h-full text-white">
       <div aria-hidden className="status-scrim" />
       <header className="mx-auto flex w-full max-w-6xl items-center gap-3 px-5 pt-[calc(1.25rem+var(--safe-top))] pb-2">
-        <span
-          className="grid size-10 shrink-0 place-items-center rounded-full bg-white/10 text-sm font-semibold ring-1 ring-white/20"
-          aria-hidden
-        >
-          {initials}
-        </span>
+        <Image src="/logo-mark.png" alt="Plot Ledger" width={44} height={44} unoptimized priority className="size-11 shrink-0" />
         <div className="min-w-0">
           <p className="truncate text-sm leading-tight font-medium">{profile?.displayName ?? "Signed in"}</p>
           <p className="truncate text-xs text-white/65">
@@ -55,10 +45,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {isAdmin ? " · Admin" : " · Read only"}
           </p>
         </div>
-        <p className="ml-auto hidden text-right sm:block">
-          <span className="block text-sm font-semibold tracking-tight">Plot Ledger</span>
-          <span className="block text-xs text-white/65">54 ft × 105 ft shared plot</span>
-        </p>
         <button
           type="button"
           aria-label="Sign out"

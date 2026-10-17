@@ -2,6 +2,7 @@
 
 import { MotionConfig, motion } from "motion/react";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { authErrorMessage, useLedger } from "@/components/ledger-provider";
 import { Button } from "@/components/ui/button";
@@ -63,7 +64,10 @@ export function LoginForm() {
       />
     <div className="mx-auto grid min-h-screen w-full max-w-5xl items-center gap-8 px-4 pt-[calc(2.5rem+var(--safe-top))] pb-[calc(2.5rem+var(--safe-bottom))] md:grid-cols-2">
       <motion.section className="relative text-white" initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 150, damping: 16 }}>
-        <p className="text-xs tracking-[0.18em] text-white/65 uppercase">Plot Ledger</p>
+        <p className="flex items-center gap-3 text-xs tracking-[0.18em] text-white/65 uppercase">
+          <Image src="/logo-mark.png" alt="" width={56} height={56} unoptimized priority className="size-14" />
+          Plot Ledger
+        </p>
         <h1 className="mt-2 text-4xl leading-tight font-semibold tracking-tight sm:text-5xl">Who owns how much of the plot</h1>
         <p className="mt-4 max-w-md text-base text-white/70">
           The target is ₹1.20 crore. Contributor ownership follows what each contributor paid.

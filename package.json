@@ -21,7 +21,7 @@
     "build:native": "NEXT_OUTPUT=export next build && cap sync",
     "cap:sync": "cap sync",
     "android:apk": "pnpm build:native && cd android && ./gradlew assembleDebug",
-    "assets:generate": "capacitor-assets generate --android --ios --iconBackgroundColor \"#0b0f1a\" --iconBackgroundColorDark \"#0b0f1a\" --splashBackgroundColor \"#0b0d10\" --splashBackgroundColorDark \"#0b0d10\"",
+    "assets:generate": "capacitor-assets generate --android --ios --iconBackgroundColor \"#0e1117\" --iconBackgroundColorDark \"#0e1117\" --splashBackgroundColor \"#0b0d10\" --splashBackgroundColorDark \"#0b0d10\"",
     "build:native:prod": "set -a && . ./.env.production && set +a && CAP_USE_EMULATORS=false pnpm build:native",
     "android:apk:prod": "pnpm build:native:prod && cd android && ./gradlew assembleRelease"
   },

@@ -131,7 +131,7 @@ The same Next.js code ships as native apps through [Capacitor 8](https://capacit
 - App id `com.devil1716.plotledger`, name **Plot Ledger** (`capacitor.config.ts`).
 - Haptics go through `@capacitor/haptics` in the apps (iOS Taptic Engine; Safari has no `navigator.vibrate`) and fall back to `navigator.vibrate` on the web (`src/lib/native.ts`).
 - Edge to edge: Capacitor's bundled SystemBars plugin (`insetsHandling: "css"`) plus `viewport-fit=cover`; the UI pads with `--safe-top` / `--safe-bottom` (globals.css). Splash screen via `@capacitor/splash-screen`, hidden once React paints.
-- Icons and splash screens come from `assets/` (`pnpm assets:generate`).
+- Icons, splash screens, favicon and the in-app logo all come from the master logo `assets/logo-master.png`: `python3 scripts/make-brand-assets.py assets/logo-master.png && pnpm assets:generate`.
 
 ### Android (debug APK)
 
