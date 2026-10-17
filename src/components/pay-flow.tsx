@@ -41,8 +41,9 @@ import type { PersonRecord } from "@/lib/records";
 import { createPayment } from "@/lib/writes";
 
 type Step = "amount" | "success";
-const MINT = "#34d399";
-const INK = "#0f1524";
+// minimal black & white, matching the Welcome screen
+const MINT = "#ffffff";
+const INK = "#ffffff";
 
 function initialsOf(name: string) {
   return name
@@ -310,28 +311,28 @@ function AmountSheet({
     <motion.section
       ref={sectionRef}
       aria-label={`Payment from ${person.name}`}
-      className="absolute inset-x-0 -bottom-16 top-[calc(0.75rem+var(--safe-top))] flex flex-col rounded-t-[2rem] bg-[var(--background)] text-[var(--foreground)] shadow-[0_-6px_18px_rgb(3_6_14/0.4)]"
+      className="absolute inset-x-0 -bottom-16 top-[calc(0.75rem+var(--safe-top))] flex flex-col rounded-t-[2rem] bg-[#0a0a0a] text-white ring-1 ring-white/10 shadow-[0_-6px_18px_rgb(0_0_0/0.6)]"
       initial={{ y: "100%" }}
       animate={{ y: 0 }}
       exit={{ y: "100%" }}
       transition={{ type: "spring", stiffness: 190, damping: 19 }}
     >
       <div className="mx-auto flex h-full w-full max-w-md flex-col px-5 pt-3 pb-[calc(5rem+var(--safe-bottom))]">
-        <div aria-hidden className="mx-auto h-1 w-10 rounded-full bg-[#d5d9e2]" />
+        <div aria-hidden className="mx-auto h-1 w-10 rounded-full bg-white/25" />
         <div className="relative mt-3 flex justify-center">
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
             data-testid="pay-close"
-            className="absolute top-1/2 left-0 grid size-10 -translate-y-1/2 place-items-center rounded-full text-[var(--muted-foreground)] hover:bg-[var(--muted)] focus-visible:outline-2 focus-visible:outline-[var(--ring)]"
+            className="absolute top-1/2 left-0 grid size-10 -translate-y-1/2 place-items-center rounded-full text-[#9a9a9a] hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"
           >
             <X className="size-5" aria-hidden />
           </button>
-          <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold ring-1 ring-[var(--border)]">Payment</span>
+          <span className="rounded-full bg-[#1a1a1a] px-3 py-1 text-xs font-semibold ring-1 ring-white/10">Payment</span>
         </div>
         <p
-          className="mx-auto mt-2 flex items-center gap-1 rounded-full px-2 py-1 text-xs text-[var(--muted-foreground)]"
+          className="mx-auto mt-2 flex items-center gap-1 rounded-full px-2 py-1 text-xs text-[#9a9a9a]"
           data-testid="pay-as"
         >
           <span
@@ -352,14 +353,14 @@ function AmountSheet({
               aria-live="polite"
               data-testid="pay-amount"
               className="text-center leading-none font-semibold tracking-tight tabular-nums"
-              style={{ color: empty ? "#c3c8d2" : amountColor }}
+              style={{ color: empty ? "#5a5a5a" : amountColor }}
               initial={pop ? { scale: 0.45, y: 44, opacity: 0.3 } : false}
               animate={{ scale: pending ? 0.78 : 1, y: 0, opacity: 1 }}
               transition={{ type: "spring", stiffness: 300, damping: 13 }}
             >
               <span className="inline-flex flex-nowrap items-baseline whitespace-nowrap text-[3.4rem]">
                 ₹<Odometer text={leftText} />
-                {opText ? <span className="inline-flex text-[#9aa2b1]"><Odometer text={opText} /></span> : null}
+                {opText ? <span className="inline-flex text-[#8a8a8a]"><Odometer text={opText} /></span> : null}
               </span>
             </motion.p>
             <AnimatePresence>
@@ -388,7 +389,7 @@ function AmountSheet({
                   data-testid="keypad-result"
                   aria-label={`Use result ${formatPaiseShort(result.paise)}`}
                   onClick={commitResult}
-                  className="rounded-full px-3 py-1 text-lg text-[#6b7385] tabular-nums hover:bg-[var(--muted)] focus-visible:outline-2 focus-visible:outline-[var(--ring)]"
+                  className="rounded-full px-3 py-1 text-lg text-[#9a9a9a] tabular-nums hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"
                   initial={{ opacity: 0, y: -10, scale: 0.8 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -60, scale: 1.8 }}
@@ -397,13 +398,13 @@ function AmountSheet({
                   = {formatPaiseShort(result.paise)}
                 </motion.button>
               ) : pending && state.right && !result.ok ? (
-                <motion.p key="err" role="alert" className="text-sm text-[var(--destructive)]" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <motion.p key="err" role="alert" className="text-sm text-[#ff8a8a]" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                   {result.reason}
                 </motion.p>
               ) : ready ? (
                 <motion.p
                   key="ready"
-                  className="text-sm text-[#6b7385]"
+                  className="text-sm text-[#9a9a9a]"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
@@ -411,14 +412,14 @@ function AmountSheet({
                   Paying {person.name.split(" ")[0]}
                 </motion.p>
               ) : (
-                <motion.p key="remain" className="text-sm text-[#6b7385]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <motion.p key="remain" className="text-sm text-[#9a9a9a]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                   {limitError ?? `Remaining to target ${formatInrFromPaise(remainingPaise)}`}
                 </motion.p>
               )}
             </AnimatePresence>
           </div>
           {error ? (
-            <p role="alert" className="mt-1 text-sm text-[var(--destructive)]">
+            <p role="alert" className="mt-1 text-sm text-[#ff8a8a]">
               {error}
             </p>
           ) : null}
@@ -426,18 +427,18 @@ function AmountSheet({
 
         {/* date + note */}
         <div className="mb-3 flex gap-2">
-          <label className="flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs ring-1 ring-[var(--border)]">
-            <span className="text-[var(--muted-foreground)]">Date</span>
+          <label className="flex items-center gap-2 h-11 rounded-full bg-[#1a1a1a] px-4 text-xs ring-1 ring-white/10">
+            <span className="text-[#9a9a9a]">Date</span>
             <input
               type="date"
               aria-label="Date"
               value={date}
               onChange={(event) => setDate(event.target.value)}
-              className="bg-transparent text-xs outline-none"
+              className="bg-transparent text-xs outline-none [color-scheme:dark]"
             />
           </label>
-          <label className="flex min-w-0 flex-1 items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs ring-1 ring-[var(--border)]">
-            <span className="text-[var(--muted-foreground)]">Note</span>
+          <label className="flex min-w-0 flex-1 items-center gap-2 h-11 rounded-full bg-[#1a1a1a] px-4 text-xs ring-1 ring-white/10">
+            <span className="text-[#9a9a9a]">Note</span>
             <input
               aria-label="Note"
               value={note}
@@ -500,7 +501,7 @@ function AmountSheet({
               data-testid={`key-op-${op.label.split(" ")[0].toLowerCase()}`}
               whileTap={{ scale: 0.85 }}
               onClick={() => tapKey(op.key)}
-              className={`text-2xl ${state.op === op.key ? "text-[#0f1524]" : "text-[#6b7385]"} focus-visible:outline-2 focus-visible:outline-[var(--ring)]`}
+              className={`text-2xl ${state.op === op.key ? "text-white" : "text-[#9a9a9a]"} focus-visible:outline-2 focus-visible:outline-white`}
             >
               {op.key === "-" ? "−" : op.key}
             </motion.button>
@@ -542,7 +543,7 @@ function Success({ person, paise, onClose }: { person: PersonRecord; paise: bigi
       data-testid="payment-done"
       onClick={onClose}
       aria-label={`Payment of ₹${formatPaiseShort(paise)} recorded for ${person.name}. Close`}
-      className="absolute inset-0 z-10 flex flex-col items-center justify-center text-[#052e1c] outline-none"
+      className="absolute inset-0 z-10 flex flex-col items-center justify-center text-black outline-none"
       style={{ background: MINT }}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -563,7 +564,7 @@ function Success({ person, paise, onClose }: { person: PersonRecord; paise: bigi
           cy="26"
           r="24"
           fill="none"
-          stroke="#052e1c"
+          stroke="#000000"
           strokeWidth="2.5"
           initial={{ pathLength: 0 }}
           animate={{ pathLength: 1 }}
@@ -572,7 +573,7 @@ function Success({ person, paise, onClose }: { person: PersonRecord; paise: bigi
         <motion.path
           d="M15 27 l7 7 l15 -16"
           fill="none"
-          stroke="#052e1c"
+          stroke="#000000"
           strokeWidth="3.5"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -636,13 +637,13 @@ function KeypadKey({ item, onPress }: { item: { key: Key; label: string }; onPre
         haptic("key");
         onPress(item.key);
       }}
-      className="relative grid h-14 place-items-center overflow-hidden rounded-[1.1rem] bg-[#eff1f5] text-2xl font-medium text-[#0f1524] focus-visible:outline-2 focus-visible:outline-[var(--ring)]"
+      className="relative grid h-14 place-items-center overflow-hidden rounded-[1.1rem] bg-[#1a1a1a] text-2xl font-medium text-white focus-visible:outline-2 focus-visible:outline-white"
     >
       {ripples.map((ripple) => (
         <motion.span
           key={ripple.id}
           aria-hidden
-          className="pointer-events-none absolute size-10 rounded-full bg-[#34d399]/45"
+          className="pointer-events-none absolute size-10 rounded-full bg-white/25"
           style={{ left: ripple.x - 20, top: ripple.y - 20 }}
           initial={{ scale: 0, opacity: 0.9 }}
           animate={{ scale: 6, opacity: 0 }}
@@ -655,7 +656,7 @@ function KeypadKey({ item, onPress }: { item: { key: Key; label: string }; onPre
   );
 }
 
-const CONFETTI_COLORS = ["#7AA7F5", "#F29A85", "#EBC06C", "#A996F2", "#E38DB4", "#ffffff", "#0b0f1a"];
+const CONFETTI_COLORS = ["#000000", "#3a3a3a", "#8a8a8a", "#c4c4c4"];
 
 /** Lightweight confetti: 24 transform/opacity-only particles bursting from the check mark. */
 function Confetti() {

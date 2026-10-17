@@ -165,12 +165,12 @@ export function SlideToConfirm({
     <div
       ref={trackRef}
       data-testid="slide-to-confirm"
-      className="relative w-full overflow-hidden rounded-full bg-[#121829] shadow-[inset_0_2px_6px_rgb(0_0_0/0.45),0_4px_12px_rgb(18_24_41/0.2)] ring-1 ring-white/5 select-none"
+      className="relative w-full overflow-hidden rounded-full bg-[#1a1a1a] shadow-[inset_0_2px_6px_rgb(0_0_0/0.5)] ring-1 ring-white/10 select-none"
       style={{ height: TRACK_H, touchAction: "none", contain: "layout paint", transform: "translateZ(0)" }}
     >
       <motion.div
         aria-hidden
-        className="absolute inset-y-0 left-0 w-full rounded-full bg-gradient-to-r from-[#2bbf8a] to-[#34d399]"
+        className="absolute inset-y-0 left-0 w-full rounded-full bg-[#3a3a3a]"
         style={{ x: fillX, opacity: fillOpacity, willChange: "transform, opacity" }}
       />
       <motion.span
@@ -196,7 +196,7 @@ export function SlideToConfirm({
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onKeyDown={onKeyDown}
-        className="absolute cursor-grab rounded-full bg-white text-[#121829] outline-none focus-visible:ring-4 focus-visible:ring-[#34d399]/60 active:cursor-grabbing"
+        className="absolute cursor-grab rounded-full bg-white text-black outline-none focus-visible:ring-4 focus-visible:ring-white/50 active:cursor-grabbing"
         style={{ x, top: PAD, left: PAD, width: THUMB, height: THUMB, boxShadow: thumbShadow, willChange: "transform" }}
         whileTap={locked ? undefined : { scale: 0.95 }}
         transition={{ type: "spring", stiffness: 400, damping: 30 }}
@@ -204,7 +204,7 @@ export function SlideToConfirm({
         <AnimatePresence initial={false}>
           <motion.span
             key={status}
-            className={`absolute inset-0 grid place-items-center ${status === "done" ? "text-[#047857]" : ""}`}
+            className={`absolute inset-0 grid place-items-center ${status === "done" ? "text-black" : ""}`}
             initial={{ opacity: 0, scale: 0.55, rotate: status === "done" ? -45 : 0 }}
             animate={{ opacity: 1, scale: 1, rotate: 0 }}
             exit={{ opacity: 0, scale: 0.55 }}
