@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { animate, motion, useMotionValue, useReducedMotion, useTransform } from "motion/react";
 import { ChevronDown, IndianRupee } from "lucide-react";
 import { haptic } from "@/lib/native";
@@ -11,47 +11,56 @@ import { lockAxis, PULL_THRESHOLD, rubberPull } from "@/lib/swipe";
  * (transform only) and a "Pull to pay" badge fills up; releasing past the threshold opens it.
  * Normal scrolling is untouched: it only engages at scrollY 0 on a clearly downward drag.
  */
-const NUDGE_KEY = "plotledger:pull-nudge-launches";
-const NUDGE_LAUNCHES = 3;
+const HINT_KEY = "plotledger:pull-hint-seen";
 const PREVIEW_H = 168;
 
-/** Counts launches (once per app session) so the nudge only plays on the first few. */
-function useFirstLaunches(): boolean {
-  const [nudge, setNudge] = useState(false);
+/**
+ * The "Pull down to pay" hint is shown once per user on this device: after it has played
+ * (or after the first successful pull) it never comes back.
+ */
+function useHintOnce(uid: string | undefined) {
+  const [show, setShow] = useState(false);
+  const key = uid ? `${HINT_KEY}:${uid}` : null;
   useEffect(() => {
+    if (!key) return;
     try {
-      const counted = sessionStorage.getItem(NUDGE_KEY) === "1";
-      const launches = Number(localStorage.getItem(NUDGE_KEY) || 0);
-      if (!counted) {
-        sessionStorage.setItem(NUDGE_KEY, "1");
-        localStorage.setItem(NUDGE_KEY, String(launches + 1));
-      }
-      const effective = counted ? launches : launches + 1;
       // eslint-disable-next-line react-hooks/set-state-in-effect -- reads storage once after mount
-      setNudge(effective <= NUDGE_LAUNCHES);
+      setShow(localStorage.getItem(key) !== "1");
     } catch {
-      setNudge(false);
+      setShow(false);
     }
-  }, []);
-  return nudge;
+  }, [key]);
+  const markSeen = useCallback(() => {
+    if (!key) return;
+    try {
+      localStorage.setItem(key, "1");
+    } catch {
+      // storage unavailable
+    }
+  }, [key]);
+  const hide = useCallback(() => setShow(false), []);
+  return { show, markSeen, hide };
 }
 
 export function PullToPay({
   enabled,
   onTrigger,
   payerName,
+  hintUid,
   children,
 }: {
   enabled: boolean;
   onTrigger: () => void;
   /** First name shown in the pay-page preview revealed while pulling. */
   payerName?: string;
+  /** Signed-in uid: the one-time hint is remembered per user. */
+  hintUid?: string;
   children: React.ReactNode;
 }) {
   const pull = useMotionValue(0);
   const reduceMotion = useReducedMotion();
-  const firstLaunches = useFirstLaunches();
-  const [nudging, setNudging] = useState(false);
+  const hint = useHintOnce(hintUid);
+  const firstLaunches = hint.show;
   const chevronY = useMotionValue(0);
   // preview of the pay page: slides down from behind the top edge as you pull
   const previewY = useTransform(pull, (value) => value - PREVIEW_H);
@@ -63,6 +72,14 @@ export function PullToPay({
   const pullLabel = useTransform(progress, [0.9, 1], [1, 0]);
   const releaseLabel = useTransform(progress, [0.9, 1], [0, 1]);
   const triggerRef = useRef(onTrigger);
+  const hintDoneRef = useRef(() => {});
+  const { markSeen, hide } = hint;
+  useEffect(() => {
+    hintDoneRef.current = () => {
+      markSeen();
+      hide();
+    };
+  }, [markSeen, hide]);
   useEffect(() => {
     triggerRef.current = onTrigger;
   }, [onTrigger]);
@@ -122,6 +139,7 @@ export function PullToPay({
       state = "idle";
       if (armed) {
         haptic("confirm");
+        hintDoneRef.current();
         triggerRef.current();
       }
       settle = animate(pull, 0, { type: "spring", stiffness: 380, damping: 34 });
@@ -141,7 +159,12 @@ export function PullToPay({
     };
   }, [enabled, pull]);
 
-  // first launches: a few gentle "tugs" of the content plus a bouncing chevron, then rest
+  // seen once = seen: remember it as soon as the hint is on screen
+  useEffect(() => {
+    if (enabled && firstLaunches) markSeen();
+  }, [enabled, firstLaunches, markSeen]);
+
+  // the one time it shows: a few gentle "tugs" of the content plus a bouncing chevron
   useEffect(() => {
     if (!enabled || !firstLaunches || reduceMotion) return;
     let stopped = false;
@@ -149,7 +172,6 @@ export function PullToPay({
     const stop = () => {
       stopped = true;
       running.forEach((animation) => animation.stop());
-      setNudging(false);
       if (pull.get() > 0 && pull.get() < 40) animate(pull, 0, { type: "spring", stiffness: 380, damping: 34 });
       chevronY.set(0);
     };
@@ -157,14 +179,12 @@ export function PullToPay({
     void (async () => {
       await wait(900);
       for (let round = 0; round < 3 && !stopped; round += 1) {
-        setNudging(true);
         const tug = animate(pull, [0, 30, 0, 12, 0], { duration: 1.1, ease: "easeInOut", times: [0, 0.3, 0.6, 0.8, 1] });
         const chev = animate(chevronY, [0, 5, 0, 5, 0], { duration: 1.1, ease: "easeInOut" });
         running.push(tug, chev);
         await Promise.all([tug, chev]);
         if (!stopped) await wait(2200);
       }
-      if (!stopped) setNudging(false);
     })();
     window.addEventListener("touchstart", stop, { passive: true, once: true });
     return () => {
@@ -202,24 +222,21 @@ export function PullToPay({
         </motion.div>
       ) : null}
       <motion.div className="relative z-[1]" style={{ y: pull }}>
-        {enabled ? (
+        {enabled && firstLaunches ? (
+          // visual hint only (keyboard / screen readers use the "Record a payment" button)
           <motion.div
-            className="-mt-1 mb-1 flex justify-center"
+            aria-hidden
+            className="pointer-events-none -mt-1 mb-1 flex justify-center"
             style={{ opacity: handleOpacity }}
             data-testid="pull-handle"
           >
-            <button
-              type="button"
-              onClick={() => triggerRef.current()}
-              aria-label="Payments: pull down to pay"
-              className="flex items-center gap-1.5 rounded-b-2xl rounded-t-md bg-white/10 px-3.5 pt-1 pb-1.5 text-xs font-medium text-white/85 ring-1 ring-white/10 backdrop-blur-sm"
-            >
+            <span className="flex items-center gap-1.5 rounded-b-2xl rounded-t-md bg-white/10 px-3.5 pt-1 pb-1.5 text-xs font-medium text-white/85 ring-1 ring-white/10 backdrop-blur-sm">
               <IndianRupee className="size-3.5 text-[var(--mint)]" aria-hidden />
-              <span>{nudging || firstLaunches ? "Pull down to pay" : "Payments"}</span>
+              <span>Pull down to pay</span>
               <motion.span style={{ y: chevronY }} className="grid">
                 <ChevronDown className="size-3.5" aria-hidden />
               </motion.span>
-            </button>
+            </span>
           </motion.div>
         ) : null}
         {children}

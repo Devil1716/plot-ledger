@@ -18,11 +18,11 @@ rules_version = '2';
 //     can record, edit or delete money for somebody else.
 //   - first admin: while settings/access does not exist, a signed-in Google account may
 //     create it naming only itself (one-time "claim admin"). After that only admins can
-//     change the admin list.
+//     change the admin list: add or revoke admins, never leaving zero.
 //
-// Payments: create own only. Edit / delete own only, by the person who created the
-// entry, within 24 hours of creating it; after that an entry is permanent. Every write
-// can be paired with an audit entry, and audit entries can never change.
+// Payments: create own only. Edit own only, by the person who created the entry, within
+// 24 hours. Delete own only, by its creator, at any time; nobody (admins included)
+// deletes someone else's. Every write carries an audit entry; audit entries never change.
 // There is no public read or write.
 //
 // ===============================================================
@@ -49,7 +49,8 @@ rules_version = '2';
 //   - personId, amountPaise (int, 1..10 crore rupees), date, note <= 500,
 //     createdBy, updatedBy, createdAt, updatedAt
 //   Read: members and admins. Create: a member, for their own person only.
-//   Update / delete: the creator, still linked to the same person, within 24h.
+//   Update: the creator, still linked to the same person, within 24h.
+//   Delete: the creator, still linked to the same person, any time (audited).
 //
 // audit/{auto-id}
 //   - action, entity ("payment" | "person" | "access"), entityId, actorUid, actorName,
@@ -108,11 +109,16 @@ service cloud.firestore {
       return /databases/$(database)/documents/payments/$(paymentId);
     }
 
-    // own payment, still editable: created by the signer, for the signer's person, < 24h old
-    function ownsEditablePayment(data) {
+    // own payment: created by the signer, for the signer's person
+    function ownsPayment(data) {
       return isLinked()
         && data.createdBy == request.auth.uid
-        && data.personId == myPersonId()
+        && data.personId == myPersonId();
+    }
+
+    // own payment, still editable: as above and < 24h old
+    function ownsEditablePayment(data) {
+      return ownsPayment(data)
         && request.time < data.createdAt + duration.value(24, 'h');
     }
 
@@ -264,10 +270,13 @@ service cloud.firestore {
         && request.resource.data.adminUids[0] == request.auth.uid
         && request.resource.data.createdAt == request.time;
 
+      // admins add and revoke admins (themselves included) but there is always at least one,
+      // and at least one current admin stays, so the list can't be handed to strangers
       allow update: if isAdmin()
         && isValidAccess(request.resource.data)
         && request.resource.data.createdAt == resource.data.createdAt
-        && request.auth.uid in request.resource.data.adminUids;
+        && request.resource.data.adminUids.size() >= 1
+        && request.resource.data.adminUids.hasAny(resource.data.adminUids);
 
       allow delete: if false;
     }
@@ -324,7 +333,9 @@ service cloud.firestore {
         && request.resource.data.updatedBy == request.auth.uid
         && request.resource.data.updatedAt == request.time;
 
-      allow delete: if ownsEditablePayment(resource.data);
+      // your own entries can be removed at any time (the audit trail keeps the record);
+      // nobody, admins included, removes someone else's
+      allow delete: if ownsPayment(resource.data);
     }
 
     match /audit/{auditId} {

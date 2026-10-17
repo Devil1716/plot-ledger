@@ -2,19 +2,18 @@
 
 import Link from "next/link";
 import { memo, useCallback, useState } from "react";
-import { BookOpenText, Plus } from "lucide-react";
+import { BookOpenText } from "lucide-react";
 import { PayFlow } from "@/components/pay-flow";
 import { PullToPay } from "@/components/pull-to-pay";
 import { useTabActive } from "@/components/tab-active";
 import { SharesPanel } from "@/components/shares-panel";
 import { Avatar as PersonAvatar } from "@/components/avatar";
 import { useLedger } from "@/components/ledger-provider";
-import { CountUp, EASE_OUT, itemVariants, listVariants, motion, popVariants, tap } from "@/components/motion-bits";
+import { CountUp, EASE_OUT, motion, popVariants, tap } from "@/components/motion-bits";
 import {
   collectedPaise,
   formatInrCompactFromPaise,
   formatInrFromPaise,
-  formatLedgerDate,
   formatPercentHundredths,
   targetProgress,
   TARGET_PAISE,
@@ -52,7 +51,6 @@ export function Dashboard() {
   const bar = Math.min(100, progress.percentHundredths / 100);
   const collectedText = formatInrFromPaise(collected);
   const paisePart = collectedText.split(".")[1];
-  const recent = [...payments].sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, 5);
   const contributors = people.filter((person) => person.role === "contributor");
   const homeowner = people.find((person) => person.role === "homeowner");
 
@@ -88,7 +86,7 @@ export function Dashboard() {
   }
 
   return (
-    <PullToPay enabled={canPay && tabActive && !open} onTrigger={openPay} payerName={people.find((person) => person.id === myPersonId)?.name.split(" ")[0]}>
+    <PullToPay enabled={canPay && tabActive && !open} onTrigger={openPay} hintUid={profile?.uid} payerName={people.find((person) => person.id === myPersonId)?.name.split(" ")[0]}>
     <motion.div
       className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)] lg:items-start"
       animate={open ? { x: "-28%", scale: 0.94, opacity: 0.55 } : { x: 0, scale: 1, opacity: 1 }}
@@ -169,18 +167,16 @@ export function Dashboard() {
 
         <div className="mt-5 flex flex-wrap gap-2">
           {canPay ? (
-            <motion.button
-              {...tap}
+            // Pull down is the way in; this stays for keyboard and screen-reader users
+            // (visually hidden until focused).
+            <button
               type="button"
               data-testid="add-payment"
               onClick={() => setOpen(true)}
-              className="flex h-10 items-center gap-2 rounded-full bg-white pr-4 pl-1.5 text-sm font-semibold text-[#0b0f1a] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              className="sr-only focus-visible:not-sr-only focus-visible:flex focus-visible:h-12 focus-visible:items-center focus-visible:rounded-full focus-visible:bg-white focus-visible:px-5 focus-visible:text-sm focus-visible:font-semibold focus-visible:text-[#0b0f1a] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
             >
-              <span className="grid size-7 place-items-center rounded-full bg-[var(--mint)] text-[#0b0f1a]">
-                <Plus className="size-4" aria-hidden />
-              </span>
-              Add payment
-            </motion.button>
+              Record a payment
+            </button>
           ) : (
             <span className="flex h-10 items-center rounded-full bg-white/10 px-4 text-sm font-medium ring-1 ring-white/15">
               Not linked · view only
@@ -242,52 +238,6 @@ export function Dashboard() {
       >
         <div aria-hidden className="mx-auto mb-3 h-1 w-10 rounded-full bg-[#d5d9e2]" />
         <SharesPanelMemo people={people} shares={shares} payments={payments} youId={profile?.personId ?? null} />
-
-        <div className="mt-6 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Recent payments</h2>
-          <Link href="/history" className="text-sm font-medium text-[var(--foreground)] underline-offset-4 hover:underline">
-            See all
-          </Link>
-        </div>
-        {recent.length === 0 ? (
-          <div className="mt-3 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-[var(--border)] px-5 py-7 text-center" data-testid="payments-empty">
-            <span aria-hidden className="grid size-12 place-items-center rounded-full bg-[#34d399]/15 text-xl">₹</span>
-            <p className="text-base font-medium">No payments yet</p>
-            <p className="text-sm text-[var(--muted-foreground)]">
-              Every share stays at 0% until the first payment is recorded.
-            </p>
-            {canPay ? (
-              <button
-                type="button"
-                onClick={() => setOpen(true)}
-                className="h-12 rounded-full bg-[#0b0f1a] px-6 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-[var(--ring)]"
-              >
-                Record your first payment
-              </button>
-            ) : null}
-          </div>
-        ) : (
-          <motion.ul className="mt-2 divide-y divide-[var(--border)]" data-testid="recent-payments" variants={listVariants} initial="hidden" animate="show">
-            {recent.map((payment) => {
-              const person = people.find((item) => item.id === payment.personId);
-              return (
-                <motion.li key={payment.id} variants={itemVariants} className="flex items-center gap-3 py-3">
-                  <Avatar name={person?.name ?? "?"} color={person?.color ?? "#94A3B8"} photoURL={person?.photoURL} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{person?.name ?? "Unknown person"}</p>
-                    <p className="truncate text-xs text-[var(--muted-foreground)]">
-                      {formatLedgerDate(payment.date)}
-                      {payment.note ? ` · ${payment.note}` : ""}
-                    </p>
-                  </div>
-                  <p className="font-semibold text-[var(--mint-ink)] tabular-nums">
-                    +{formatInrFromPaise(payment.amountPaise)}
-                  </p>
-                </motion.li>
-              );
-            })}
-          </motion.ul>
-        )}
 
         <div className="mt-8 flex gap-3 rounded-[1.25rem] bg-[#eef0f4] p-4 text-sm text-[#3c4558]">
           <span aria-hidden className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-white text-xs font-bold text-[#121829] ring-1 ring-[var(--border)]">i</span>

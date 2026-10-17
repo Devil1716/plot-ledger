@@ -27,13 +27,17 @@ import { BUNDLE_NATIVE_BUILD, BUNDLE_VERSION } from "@/lib/app-update";
 export function PeopleView() {
   const ledger = useLedger();
   const [editing, setEditing] = useState<PersonRecord | null>(null);
-  const [adminDraft, setAdminDraft] = useState<string[] | null>(null);
+  const [adminChange, setAdminChange] = useState<{ account: UserRecord; grant: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (!ledger.dataReady) return <div className="bg-muted h-48 animate-pulse rounded-xl" />;
 
-  async function saveAdmins() {
-    if (!adminDraft || !ledger.profile || !ledger.accessCreatedAt) return;
+  async function applyAdminChange() {
+    if (!adminChange || !ledger.profile || !ledger.accessCreatedAt) return;
+    const { account, grant } = adminChange;
+    const next = grant
+      ? [...new Set([...ledger.adminUids, account.uid])]
+      : ledger.adminUids.filter((uid) => uid !== account.uid);
     setBusy(true);
     try {
       const { db } = await firebaseReady();
@@ -41,10 +45,12 @@ export function PeopleView() {
         db,
         { uid: ledger.profile.uid, name: ledger.profile.displayName },
         ledger.accessCreatedAt,
-        adminDraft,
+        ledger.adminUids,
+        next,
+        { name: account.displayName || account.email, granted: grant },
       );
-      toast.success("Admins updated");
-      setAdminDraft(null);
+      toast.success(grant ? `${account.displayName} is now an admin` : `${account.displayName} is no longer an admin`);
+      setAdminChange(null);
     } catch (error) {
       toast.error(authErrorMessage(error));
     } finally {
@@ -52,14 +58,17 @@ export function PeopleView() {
     }
   }
 
+  const approvedAccounts = ledger.accounts.filter((account) => account.personId || ledger.adminUids.includes(account.uid));
+  const lastAdmin = ledger.adminUids.length <= 1;
+
   return (
     <div className="grid gap-6">
       <header>
         <h1 className="font-heading text-3xl">People</h1>
         <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
-          Everyone signs in with Google and waits until the admin approves them. Approved members see the whole
-          ledger and record only their own payments; the admin approves people, marks the homeowner (0% share)
-          and never records money for someone else.
+          Everyone signs in with Google and waits until an admin approves them. Approved members see the whole
+          ledger and record or delete only their own payments; admins approve people, mark the homeowner (0% share)
+          and never record money for someone else.
         </p>
       </header>
       {ledger.isAdmin ? <PendingApprovals /> : null}
@@ -86,7 +95,7 @@ export function PeopleView() {
                 </p>
               </div>
               {ledger.isAdmin ? (
-                <Button variant="outline" onClick={() => setEditing(person)}>
+                <Button variant="outline" className="h-12 min-w-12 px-4" onClick={() => setEditing(person)}>
                   Edit
                 </Button>
               ) : null}
@@ -96,52 +105,87 @@ export function PeopleView() {
       </motion.ul>
 
       {ledger.isAdmin ? (
-        <section className="bg-card rounded-xl p-4 ring-1 ring-foreground/10">
+        <section className="bg-card rounded-xl p-4 ring-1 ring-foreground/10" data-testid="admins-section">
           <h2 className="font-heading text-xl">Admins</h2>
           <p className="text-muted-foreground mt-1 mb-3 text-sm">
-            Admins approve new members and edit the roster. They can&apos;t record money for anyone else, and you
-            can&apos;t remove your own admin access from here.
+            Admins approve new members and edit the roster. They can&apos;t record or delete money for anyone else.
+            There is always at least one admin.
           </p>
-          <ul className="grid gap-2">
-            {ledger.accounts.map((account) => {
-              const selected = (adminDraft ?? ledger.adminUids).includes(account.uid);
-              const self = account.uid === ledger.user?.uid;
-              return (
-                <li key={account.uid}>
-                  <label className="flex items-center gap-3 text-sm">
-                    <input
-                      type="checkbox"
-                      className="size-4"
-                      checked={selected}
-                      disabled={self}
-                      onChange={(event) => {
-                        const current = adminDraft ?? ledger.adminUids;
-                        setAdminDraft(
-                          event.target.checked
-                            ? [...new Set([...current, account.uid])]
-                            : current.filter((uid) => uid !== account.uid),
-                        );
-                      }}
-                    />
-                    <span>
-                      {account.displayName}
-                      <span className="text-muted-foreground"> · {account.email}</span>
-                      {self ? " · you" : ""}
-                    </span>
-                  </label>
-                </li>
-              );
-            })}
-          </ul>
-          {adminDraft ? (
-            <Button className="mt-3" disabled={busy} onClick={() => void saveAdmins()}>
-              {busy ? "Saving…" : "Save admins"}
-            </Button>
+          {approvedAccounts.length === 0 ? (
+            <p className="text-muted-foreground text-sm">Approve someone first, then you can make them an admin.</p>
+          ) : (
+            <ul className="grid gap-2">
+              {approvedAccounts.map((account) => {
+                const isAdmin = ledger.adminUids.includes(account.uid);
+                const self = account.uid === ledger.user?.uid;
+                const locked = isAdmin && lastAdmin;
+                return (
+                  <li key={account.uid} className="flex flex-wrap items-center gap-3" data-testid={`admin-row-${account.uid}`}>
+                    <Avatar name={account.displayName} photoURL={account.photoURL} color="#7AA7F5" className="size-9" />
+                    <div className="min-w-0 flex-1 text-sm">
+                      <p className="truncate font-medium">
+                        {account.displayName}
+                        {self ? " (you)" : ""}
+                      </p>
+                      <p className="text-muted-foreground truncate">{account.email}</p>
+                    </div>
+                    {isAdmin ? <Badge>Admin</Badge> : null}
+                    <Button
+                      variant={isAdmin ? "outline" : "secondary"}
+                      className="h-12 min-w-12 px-4"
+                      disabled={busy || locked || (!isAdmin && ledger.adminUids.length >= 6)}
+                      title={locked ? "The last admin can't be removed" : undefined}
+                      onClick={() => setAdminChange({ account, grant: !isAdmin })}
+                    >
+                      {isAdmin ? (self ? "Step down" : "Remove admin") : "Make admin"}
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {lastAdmin ? (
+            <p className="text-muted-foreground mt-3 text-xs">You&apos;re the only admin, so you can&apos;t step down until someone else is one.</p>
           ) : null}
         </section>
       ) : (
-        <p className="text-muted-foreground text-sm">You can read the roster. The admin approves members and edits names.</p>
+        <p className="text-muted-foreground text-sm">You can read the roster. Admins approve members and edit names.</p>
       )}
+
+      <Dialog open={Boolean(adminChange)} onOpenChange={(open) => !open && setAdminChange(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {adminChange?.grant
+                ? `Make ${adminChange.account.displayName} an admin?`
+                : adminChange?.account.uid === ledger.user?.uid
+                  ? "Step down as admin?"
+                  : `Remove ${adminChange?.account.displayName ?? ""} as admin?`}
+            </DialogTitle>
+            <DialogDescription>
+              {adminChange?.grant
+                ? "They'll be able to approve members, edit the roster and manage admins. The change is recorded in the audit trail."
+                : adminChange?.account.uid === ledger.user?.uid
+                  ? "You'll lose admin access right away; another admin has to give it back. Recorded in the audit trail."
+                  : "They keep their account and payments but lose admin access. Recorded in the audit trail."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" className="h-12" onClick={() => setAdminChange(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant={adminChange?.grant ? "default" : "destructive"}
+              className="h-12"
+              disabled={busy}
+              onClick={() => void applyAdminChange()}
+              data-testid="confirm-admin-change"
+            >
+              {busy ? "Saving…" : adminChange?.grant ? "Make admin" : "Remove admin"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <PersonDialog person={editing} onClose={() => setEditing(null)} />
       <p className="text-muted-foreground pt-2 text-center text-xs" data-testid="app-version">

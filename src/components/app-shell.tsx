@@ -2,14 +2,14 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { BookOpenText, LayoutGrid, LogOut, Users } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 import { useLedger } from "@/components/ledger-provider";
 import { TabPager } from "@/components/tab-pager";
 import { cn } from "cn";
-import { MotionConfig, motion, useMotionValue } from "motion/react";
+import { animate, MotionConfig, motion, useMotionValue } from "motion/react";
 import { normalizePath, TAB_PATHS, tabIndexOf } from "@/lib/swipe";
 
 const links = [
@@ -50,17 +50,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const rects = useRef<Array<{ left: number; width: number }>>([]);
   const activeRef = useRef(active);
 
+  // The pill sits on the active tab and moves only once a tab change commits: swiping
+  // between tabs has no visible indicator while the finger is down (Sharan: "hide the swiping").
+  const placed = useRef(false);
   const placePill = useCallback(() => {
-    const boxes = rects.current;
-    if (boxes.length !== links.length) return;
-    const w = width.get() || 1;
-    const progress = Math.min(links.length - 1, Math.max(0, activeRef.current - drag.get() / w));
-    const lower = Math.floor(progress);
-    const upper = Math.min(links.length - 1, lower + 1);
-    const t = progress - lower;
-    pillX.set(boxes[lower].left + (boxes[upper].left - boxes[lower].left) * t);
-    pillW.set(boxes[lower].width + (boxes[upper].width - boxes[lower].width) * t);
-  }, [drag, pillW, pillX, width]);
+    const box = rects.current[activeRef.current];
+    if (!box) return;
+    if (!placed.current) {
+      placed.current = true;
+      pillX.set(box.left);
+      pillW.set(box.width);
+      return;
+    }
+    const spring = { type: "spring", stiffness: 520, damping: 42 } as const;
+    animate(pillX, box.left, spring);
+    animate(pillW, box.width, spring);
+  }, [pillW, pillX]);
 
   useLayoutEffect(() => {
     activeRef.current = active;
@@ -72,11 +77,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   }, [active, placePill]);
-
-  useEffect(() => {
-    const off = drag.on("change", placePill);
-    return off;
-  }, [drag, placePill]);
 
   const onNavigate = useCallback(
     (index: number) => {

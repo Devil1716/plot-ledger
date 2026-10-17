@@ -14,9 +14,17 @@ async function signIn(page: Page, account: string, expectLedger = true) {
   if (expectLedger) await expect(page.getByTestId("collected-total")).toBeVisible();
 }
 
+/** The ledger has no visible "Add payment" button (pull down instead); keyboard / screen readers use this. */
+async function openPayByKeyboard(page: Page) {
+  const button = page.getByTestId("add-payment");
+  await expect(button).toHaveAccessibleName("Record a payment");
+  await button.focus();
+  await page.keyboard.press("Enter");
+}
+
 /** Records a payment for the signed-in person: there is no "who paid" picker any more. */
 async function payForMyself(page: Page, firstName: string, amount: string, date: string, note: string) {
-  await page.getByTestId("add-payment").click();
+  await openPayByKeyboard(page);
   const flow = page.getByTestId("pay-flow");
   await expect(flow.getByTestId("pay-as")).toContainText(`You (${firstName})`);
   // the overlay must cover the screen (regression: it once rendered below the page)
@@ -42,6 +50,10 @@ test("everyone pays only for themselves and sees everyone's shares", async ({ br
   const adminPage = await adminContext.newPage();
   await signIn(adminPage, ADMIN);
   await expect(adminPage.getByTestId("share-ananya")).toContainText("0.00%");
+  // the landing page carries no payment list and no visible "Add payment" button
+  await expect(adminPage.getByTestId("recent-payments")).toHaveCount(0);
+  await expect(adminPage.getByText("Recent payments")).toHaveCount(0);
+  await expect(adminPage.getByRole("button", { name: "Add payment" })).toHaveCount(0);
 
   // the admin is linked to Ananya and can only record Ananya's money
   await payForMyself(adminPage, "Ananya", "25,00,000", "2026-04-11", "Twenty-five lakh");
@@ -75,6 +87,17 @@ test("everyone pays only for themselves and sees everyone's shares", async ({ br
   await expect(adminPage.getByTestId("audit-list")).toContainText("Ananya Iyer");
   await expect(adminPage.getByTestId("audit-list")).toContainText("Rohan Mehta");
   await expect(adminPage.getByRole("button", { name: "Edit" })).toHaveCount(1);
+  // admins delete only their own entries too
+  await expect(adminPage.getByRole("button", { name: "Delete" })).toHaveCount(1);
+
+  // the member removes their own payment (with a confirmation); the audit keeps the record
+  await expect(memberPage.getByRole("button", { name: "Delete" })).toHaveCount(1);
+  await memberPage.getByRole("button", { name: "Delete" }).click();
+  await expect(memberPage.getByRole("heading", { name: "Delete this payment?" })).toBeVisible();
+  await memberPage.getByRole("button", { name: "Delete payment" }).click();
+  await expect(memberPage.getByTestId("history-list")).not.toContainText("Rest of the contributor pool");
+  await expect(memberPage.getByTestId("audit-list")).toContainText("Removed");
+  await expect(adminPage.getByTestId("history-list")).not.toContainText("Rest of the contributor pool");
 
   await memberContext.close();
   await adminContext.close();
@@ -102,7 +125,7 @@ test("a new Google account waits until the admin approves it", async ({ browser 
 
   // the newcomer's screen opens the ledger by itself and she can pay only as herself
   await expect(page.getByTestId("collected-total")).toBeVisible();
-  await page.getByTestId("add-payment").click();
+  await openPayByKeyboard(page);
   await expect(page.getByTestId("pay-flow").getByTestId("pay-as")).toContainText("You (Neha)");
   await page.getByTestId("pay-flow").getByTestId("pay-close").click();
 
@@ -146,6 +169,8 @@ test("swipe between tabs and pull down to pay", async ({ browser }) => {
   const context = await browser.newContext({ hasTouch: true, viewport: { width: 412, height: 900 } });
   const page = await context.newPage();
   await signIn(page, MEMBER);
+  // the one-time hint: "Pull down to pay" shows on this first visit
+  await expect(page.getByTestId("pull-handle")).toContainText("Pull down to pay");
 
   // swipe left on the ledger → People; swipe right twice → History
   await touchDrag(page, { x: 330, y: 420 }, { x: 60, y: 430 });
@@ -166,8 +191,6 @@ test("swipe between tabs and pull down to pay", async ({ browser }) => {
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByTestId("collected-total")).toBeVisible();
 
-  // a peeking "Payments" handle advertises the pull (first launches say "Pull down to pay")
-  await expect(page.getByTestId("pull-handle")).toContainText("Pull down to pay");
   // pull down from the top of the ledger opens the pay flow
   await page.evaluate(() => window.scrollTo(0, 0));
   await touchDrag(page, { x: 200, y: 250 }, { x: 205, y: 560 }, 16);
@@ -177,8 +200,41 @@ test("swipe between tabs and pull down to pay", async ({ browser }) => {
   await flow.getByTestId("pay-close").click();
   await expect(flow).toHaveCount(0);
 
+  // after the first successful pull the hint is gone, and stays gone after a reload
+  await expect(page.getByTestId("pull-handle")).toHaveCount(0);
   // a short pull does nothing
   await touchDrag(page, { x: 200, y: 250 }, { x: 200, y: 300 }, 6);
   await expect(page.getByTestId("pay-flow")).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByTestId("collected-total")).toBeVisible();
+  await expect(page.getByTestId("pull-handle")).toHaveCount(0);
+  await context.close();
+});
+
+test("an admin makes another member an admin and can revoke it, but never the last admin", async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await signIn(page, ADMIN);
+  await page.getByTestId("nav-people").click();
+  const admins = page.getByTestId("admins-section");
+  await expect(admins).toBeVisible();
+  // only admin: can't step down
+  await expect(admins.getByRole("button", { name: "Step down" })).toBeDisabled();
+  await expect(admins).toContainText("only admin");
+
+  await admins.getByRole("button", { name: "Make admin" }).first().click();
+  await page.getByTestId("confirm-admin-change").click();
+  await expect(admins.getByRole("button", { name: "Remove admin" })).toHaveCount(1);
+  await expect(admins.getByRole("button", { name: "Step down" })).toBeEnabled();
+
+  await admins.getByRole("button", { name: "Remove admin" }).click();
+  await expect(page.getByRole("heading", { name: /^Remove .* as admin\?$/ })).toBeVisible();
+  await page.getByTestId("confirm-admin-change").click();
+  await expect(admins.getByRole("button", { name: "Remove admin" })).toHaveCount(0);
+  await expect(admins.getByRole("button", { name: "Step down" })).toBeDisabled();
+
+  await page.getByTestId("nav-history").click();
+  await expect(page.getByTestId("audit-list")).toContainText("an admin");
+  await expect(page.getByTestId("audit-list")).toContainText("as admin");
   await context.close();
 });

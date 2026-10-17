@@ -1,6 +1,6 @@
 {
   "name": "plot-ledger",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "nativeBuild": 106,
   "private": true,
   "engines": {
@@ -51,6 +51,7 @@
     "tw-animate-css": "^1.4.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@capacitor/assets": "3.0.5",
     "@capacitor/cli": "8.5.3",
     "@firebase/rules-unit-testing": "^6.0.0",

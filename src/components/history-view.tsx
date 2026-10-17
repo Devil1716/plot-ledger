@@ -19,7 +19,7 @@ import { firebaseReady } from "@/lib/firebase";
 import { formatInrFromPaise, formatLedgerDate } from "@/lib/ledger-math";
 import type { PaymentRecord } from "@/lib/records";
 import { deletePayment } from "@/lib/writes";
-import { canEditPayment, editTimeLeft } from "@/lib/permissions";
+import { canDeletePayment, canEditPayment, editTimeLeft } from "@/lib/permissions";
 
 export function HistoryView() {
   const { payments, people, audit, profile, myPersonId, dataReady } = useLedger();
@@ -91,19 +91,23 @@ export function HistoryView() {
                     <p className="text-muted-foreground text-sm">{formatLedgerDate(payment.date)}</p>
                     {payment.note ? <p className="mt-2 text-sm">{payment.note}</p> : null}
                   </div>
-                  {canEditPayment(payment, profile?.uid, myPersonId, now) ? (
+                  {canDeletePayment(payment, profile?.uid, myPersonId) ? (
                     <div className="flex flex-col items-end gap-1.5">
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => setEditing(payment)}>
-                        Edit
-                      </Button>
-                      <Button variant="destructive" size="sm" onClick={() => setRemoving(payment)}>
-                        Delete
-                      </Button>
-                    </div>
-                    <span className="text-muted-foreground text-xs">
-                      Editable for {Math.max(1, Math.ceil(editTimeLeft(payment, now) / 3_600_000))}h more
-                    </span>
+                      <div className="flex gap-2">
+                        {canEditPayment(payment, profile?.uid, myPersonId, now) ? (
+                          <Button variant="outline" className="h-12 min-w-12 px-4" onClick={() => setEditing(payment)}>
+                            Edit
+                          </Button>
+                        ) : null}
+                        <Button variant="destructive" className="h-12 min-w-12 px-4" onClick={() => setRemoving(payment)}>
+                          Delete
+                        </Button>
+                      </div>
+                      {canEditPayment(payment, profile?.uid, myPersonId, now) ? (
+                        <span className="text-muted-foreground text-xs">
+                          Editable for {Math.max(1, Math.ceil(editTimeLeft(payment, now) / 3_600_000))}h more
+                        </span>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -144,10 +148,10 @@ export function HistoryView() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRemoving(null)}>
+            <Button variant="outline" className="h-12" onClick={() => setRemoving(null)}>
               Keep it
             </Button>
-            <Button variant="destructive" disabled={busy} onClick={() => void confirmDelete()}>
+            <Button variant="destructive" className="h-12" disabled={busy} onClick={() => void confirmDelete()}>
               {busy ? "Deleting…" : "Delete payment"}
             </Button>
           </DialogFooter>

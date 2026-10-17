@@ -214,16 +214,24 @@ export async function savePerson(
   await batch.commit();
 }
 
+/** Pure check mirroring the access rule: 1-6 admins and at least one current admin kept. */
+export function adminChangeError(current: string[], next: string[]): string | null {
+  if (next.length === 0) return "There must always be at least one admin.";
+  if (next.length > 6) return "At most six admins.";
+  if (!next.some((uid) => current.includes(uid))) return "At least one current admin has to stay.";
+  return null;
+}
+
 export async function updateAdmins(
   db: Firestore,
   actor: Actor,
   currentCreatedAt: Timestamp,
+  currentAdminUids: string[],
   adminUids: string[],
+  change: { name: string; granted: boolean },
 ): Promise<void> {
-  if (!adminUids.includes(actor.uid)) {
-    throw new Error("Keep yourself as an admin so the ledger is not locked.");
-  }
-  if (adminUids.length > 6) throw new Error("At most six admins.");
+  const problem = adminChangeError(currentAdminUids, adminUids);
+  if (problem) throw new Error(problem);
   const batch = writeBatch(db);
   batch.update(doc(db, "settings", "access"), {
     adminUids,
@@ -233,7 +241,7 @@ export async function updateAdmins(
     action: "update",
     entity: "access",
     entityId: "access",
-    summary: `Updated admins (${adminUids.length} ${adminUids.length === 1 ? "person" : "people"})`,
+    summary: `${change.granted ? "Made" : "Removed"} ${change.name} ${change.granted ? "an admin" : "as admin"} (${adminUids.length} ${adminUids.length === 1 ? "admin" : "admins"} now)`,
   });
   batch.set(trail.ref, trail.data);
   await batch.commit();

@@ -306,9 +306,10 @@ describe("editing and deleting payments", () => {
     await assertFails(edit(memberDb(), "own-new", { createdBy: ADMIN_UID, updatedBy: MEMBER_UID }));
   });
 
-  it("locks a payment after 24 hours, even for its creator", async () => {
+  it("locks edits after 24 hours, but the creator can still delete their own entry", async () => {
     await assertFails(edit(memberDb(), "own-old", { note: "late edit", updatedBy: MEMBER_UID }));
-    await assertFails(deleteDoc(doc(memberDb(), "payments", "own-old")));
+    await assertFails(deleteDoc(doc(adminDb(), "payments", "own-old")));
+    await assertSucceeds(deleteDoc(doc(memberDb(), "payments", "own-old")));
   });
 
   it("denies editing or deleting someone else's payment, admin included", async () => {
@@ -637,11 +638,17 @@ describe("accounts and admin bootstrap", () => {
         createdAt,
       }),
     );
-    await assertFails(
-      updateDoc(doc(db, "settings", "access"), {
-        adminUids: [MEMBER_UID],
-        createdAt,
-      }),
-    );
+    // revoke another admin
+    await assertSucceeds(updateDoc(doc(db, "settings", "access"), { adminUids: [ADMIN_UID], createdAt }));
+    // never zero admins, never hand the list to someone who isn't an admin yet
+    await assertFails(updateDoc(doc(db, "settings", "access"), { adminUids: [], createdAt }));
+    await assertFails(updateDoc(doc(db, "settings", "access"), { adminUids: [MEMBER_UID], createdAt }));
+    // a member can't make themself admin
+    await assertFails(updateDoc(doc(memberDb(), "settings", "access"), { adminUids: [ADMIN_UID, MEMBER_UID], createdAt }));
+    // with two admins, one may step down
+    await assertSucceeds(updateDoc(doc(db, "settings", "access"), { adminUids: [ADMIN_UID, MEMBER_UID], createdAt }));
+    await assertSucceeds(updateDoc(doc(db, "settings", "access"), { adminUids: [MEMBER_UID], createdAt }));
+    // ...after which they are no longer an admin
+    await assertFails(updateDoc(doc(adminDb(), "settings", "access"), { adminUids: [MEMBER_UID, ADMIN_UID], createdAt }));
   });
 });
