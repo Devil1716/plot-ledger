@@ -1,13 +1,14 @@
 "use client";
 
 import { MotionConfig, motion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { authErrorMessage, useLedger } from "@/components/ledger-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { usingEmulators } from "@/lib/firebase";
+import { isNativeApp } from "@/lib/native";
 import { DEMO_ADMIN_EMAIL, DEMO_ADMIN_PASSWORD, DEMO_MEMBER_EMAIL, DEMO_MEMBER_PASSWORD } from "@/lib/roster";
 
 export function LoginForm() {
@@ -20,6 +21,10 @@ export function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const emulators = usingEmulators();
+  // Google popup sign-in can't run inside the iOS/Android WebView, and a real
+  // project only offers it once the provider is enabled (NEXT_PUBLIC_GOOGLE_SIGN_IN).
+  const native = useSyncExternalStore(noopSubscribe, isNativeApp, () => false);
+  const showGoogle = !native && process.env.NEXT_PUBLIC_GOOGLE_SIGN_IN !== "false";
 
   useEffect(() => {
     if (status === "ready") router.replace("/");
@@ -50,6 +55,7 @@ export function LoginForm() {
   return (
     <MotionConfig reducedMotion="user">
     <div className="app-dark relative overflow-hidden">
+      <div aria-hidden className="status-scrim" />
       <motion.div
         aria-hidden
         className="pointer-events-none absolute -top-40 left-1/2 size-[36rem] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgb(52_211_153/0.28),transparent_65%)]"
@@ -104,17 +110,19 @@ export function LoginForm() {
         <Button type="submit" className="h-11" disabled={busy}>
           {busy ? "Please wait…" : mode === "create" ? "Create account" : "Sign in"}
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          className="h-11"
-          onClick={() => {
-            setError(null);
-            void signInGoogle().catch((googleError: unknown) => setError(authErrorMessage(googleError)));
-          }}
-        >
-          Continue with Google
-        </Button>
+        {showGoogle ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11"
+            onClick={() => {
+              setError(null);
+              void signInGoogle().catch((googleError: unknown) => setError(authErrorMessage(googleError)));
+            }}
+          >
+            Continue with Google
+          </Button>
+        ) : null}
         <button
           type="button"
           className="text-sm underline-offset-4 hover:underline"
@@ -141,4 +149,8 @@ export function LoginForm() {
     </div>
     </MotionConfig>
   );
+}
+
+function noopSubscribe() {
+  return () => {};
 }

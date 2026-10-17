@@ -140,12 +140,34 @@
 }
 /* v3 ink + mint */
 .app-dark {
+  position: relative;
+  isolation: isolate;
+  background: var(--ink-900);
+  min-height: 100vh;
+}
+/* fixed glow layer instead of background-attachment: fixed, which repaints in
+   stripes while scrolling in Android WebView / mobile Chrome */
+.app-dark::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
   background:
     radial-gradient(640px 360px at 90% -8%, rgb(52 211 153 / 0.14), transparent 62%),
     radial-gradient(560px 380px at -10% 0%, rgb(122 167 245 / 0.12), transparent 60%),
     linear-gradient(180deg, var(--ink-900) 0%, var(--ink-800) 100%);
-  background-attachment: fixed;
-  min-height: 100vh;
+}
+/* solid strip behind the (transparent, edge-to-edge) phone status bar so content
+   scrolling up never shows through it; 0px tall in desktop browsers */
+.status-scrim {
+  position: fixed;
+  inset-inline: 0;
+  top: 0;
+  z-index: 60;
+  height: var(--safe-top);
+  background: var(--ink-900);
+  pointer-events: none;
 }
 .sheet {
   background: var(--background);

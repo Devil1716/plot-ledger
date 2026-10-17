@@ -92,7 +92,7 @@ export function Dashboard() {
     >
       {/* Dark hero */}
       <section className="relative overflow-hidden px-5 pt-4 lg:sticky lg:top-4">
-        <div aria-hidden className="pointer-events-none absolute top-4 -right-4 flex h-32 w-12">
+        <div aria-hidden className="pointer-events-none absolute top-4 -right-4 hidden h-32 w-12 sm:flex">
           {(shares.some((share) => share.percentHundredths > 0)
             ? shares.filter((share) => share.percentHundredths > 0)
             : contributors.map((person) => ({ personId: person.id, percentHundredths: 2000 }))

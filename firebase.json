@@ -1,16 +1,13 @@
 {
   "firestore": {
+    "database": "(default)",
+    "location": "asia-south1",
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
   "auth": {
     "providers": {
-      "emailPassword": true,
-      "googleSignIn": {
-        "oAuthBrandDisplayName": "Plot Ledger",
-        "supportEmail": "support@plotshare.local",
-        "authorizedRedirectUris": ["http://localhost", "http://127.0.0.1"]
-      }
+      "emailPassword": true
     }
   },
   "emulators": {

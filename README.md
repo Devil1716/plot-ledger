@@ -113,6 +113,10 @@ Inside the Android emulator, `127.0.0.1` is the phone itself, so the app rewrite
 
 `ios/` is a ready Xcode project (Swift Package Manager). Building, signing and installing require a Mac with Xcode and an Apple Developer account (a free account can sideload to your own phone for 7 days; App Store / TestFlight needs the paid program). On the Mac: `pnpm install && pnpm build:native && npx cap open ios`, pick your team under Signing & Capabilities, and run. The iOS simulator shares the Mac's loopback, so the emulator host stays `127.0.0.1`.
 
+### Production Firebase project
+
+The released APK talks to the real Firebase project **`plot-ledger-ss1017`** (Spark plan, Firestore in `asia-south1`, Email/Password sign-in). Its public web config is in `.env.production.example`; copy it to `.env.production` and run `pnpm android:apk:prod` to rebuild the APK against it (`CAP_USE_EMULATORS=false`: HTTPS only, no emulator hints, no Google button). Accounts are created by the project owner; credentials are never stored in this repository.
+
 ### Real phones need a real Firebase project
 
 The demo project only exists inside the local emulators. For the apps to work on real phones away from the dev machine, follow "Plug in a real Firebase project" above, put that config in `.env.local` with `NEXT_PUBLIC_USE_EMULATORS=false`, and build with `CAP_USE_EMULATORS=false pnpm build:native` (turns off cleartext / mixed content). `localhost` must stay in Firebase Auth's authorized domains, because the apps are served from `https://localhost` (Android) and `capacitor://localhost` (iOS). Release builds also need your own Android signing keystore and an Apple distribution certificate.
