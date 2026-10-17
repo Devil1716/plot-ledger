@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, MotionConfig, motion } from "motion/react";
+import { MotionConfig, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -18,7 +18,6 @@ export function LoginForm() {
   const { status, signInGoogle, signInTestAccount } = useLedger();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [about, setAbout] = useState(false);
   const emulators = usingEmulators();
 
   useEffect(() => {
@@ -32,7 +31,9 @@ export function LoginForm() {
     try {
       await action();
     } catch (signInError) {
-      setError(authErrorMessage(signInError));
+      const message = authErrorMessage(signInError);
+      // closing Google's account picker is not an error
+      if (!/cancel|popup-closed|12501|\[16\]/i.test(message)) setError(message);
     } finally {
       setBusy(false);
     }
@@ -74,32 +75,7 @@ export function LoginForm() {
               <GoogleMark />
               {busy ? "Opening Google…" : "Continue with Google"}
             </button>
-            <button
-              type="button"
-              className={`${pill} bg-[#262626] text-white hover:bg-[#303030]`}
-              aria-expanded={about}
-              aria-controls="about-plot-ledger"
-              onClick={() => setAbout((open) => !open)}
-            >
-              {about ? "Got it" : "How it works"}
-            </button>
           </div>
-
-          <AnimatePresence initial={false}>
-            {about ? (
-              <motion.p
-                id="about-plot-ledger"
-                className="mt-4 overflow-hidden text-center text-sm leading-6 text-[#b3b3b3]"
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-              >
-                Everyone records only their own payments toward the ₹1.20 crore plot. Ownership follows what each
-                contributor paid; the homeowner&apos;s money is recorded at a 0% share. New members wait until an admin
-                approves them.
-              </motion.p>
-            ) : null}
-          </AnimatePresence>
 
           {emulators ? (
             <div className="mt-4 grid w-full gap-2" data-testid="emulator-accounts">
