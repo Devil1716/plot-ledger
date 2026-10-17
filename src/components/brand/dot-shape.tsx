@@ -4,48 +4,54 @@ import { useEffect, useRef } from "react";
 
 type Vec = [number, number, number];
 
-const SIDE = 9; // 9×9 grid per face-ish sampling → ~500 points, cheap on mid phones
+const COUNT = 520;
 
-/** Points on a unit cube surface, a sphere and a twisted plane, all in the same order so they can morph. */
-function buildShapes(): Vec[][] {
-  const cube: Vec[] = [];
-  const steps = SIDE - 1;
-  for (let face = 0; face < 6; face += 1) {
-    for (let i = 0; i < SIDE; i += 1) {
-      for (let j = 0; j < SIDE; j += 1) {
-        const a = (i / steps) * 2 - 1;
-        const b = (j / steps) * 2 - 1;
-        const axis = face % 3;
-        const sign = face < 3 ? 1 : -1;
-        const p: Vec = axis === 0 ? [sign, a, b] : axis === 1 ? [a, sign, b] : [a, b, sign];
-        cube.push(p);
-      }
+/** Sample points evenly from a bold "₹" drawn on an offscreen canvas (two thin layers for depth). */
+function sampleRupee(): Vec[] {
+  const S = 160;
+  const canvas = document.createElement("canvas");
+  canvas.width = S;
+  canvas.height = S;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return [];
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `700 ${S * 0.92}px system-ui, "Noto Sans", sans-serif`;
+  ctx.fillText("₹", S / 2, S / 2 + S * 0.04);
+  const data = ctx.getImageData(0, 0, S, S).data;
+  const inside: Array<[number, number]> = [];
+  for (let y = 0; y < S; y += 2) {
+    for (let x = 0; x < S; x += 2) {
+      if (data[(y * S + x) * 4 + 3] > 128) inside.push([x, y]);
     }
   }
-  const sphere = cube.map(([x, y, z]) => {
-    const len = Math.hypot(x, y, z) || 1;
-    return [(x / len) * 1.25, (y / len) * 1.25, (z / len) * 1.25] as Vec;
-  });
-  const wave = cube.map(([x, y, z], index) => {
-    const u = ((index % SIDE) / steps) * 2 - 1;
-    const v = ((Math.floor(index / SIDE) % (SIDE * 6)) / (SIDE * 6 - 1)) * 2 - 1;
-    return [u * 1.4, Math.sin(u * 2.4 + v * 3) * 0.35 + (y + z) * 0.05, v * 1.4 + x * 0.02] as Vec;
-  });
-  return [cube, sphere, wave];
+  if (inside.length === 0) return [];
+  const points: Vec[] = [];
+  for (let index = 0; index < COUNT; index += 1) {
+    const [x, y] = inside[Math.floor((index / COUNT) * inside.length)];
+    const layer = index % 2 === 0 ? 0.12 : -0.12;
+    points.push([(x / S) * 2 - 1, (y / S) * 2 - 1, layer]);
+  }
+  return points;
 }
 
-const SHAPES = buildShapes();
-const COUNT = SHAPES[0].length;
-
-export interface DotShapeHandle {
-  /** 0 = shape, 1 = every point pulled to the centre */
-  collapse: number;
+/** Cheap smooth pseudo-noise from a few sines: enough for a calm, organic wobble. */
+function wobble(x: number, y: number, z: number, t: number): number {
+  return (
+    0.16 * Math.sin(x * 2.1 + t * 0.9) * Math.cos(y * 1.7 - t * 0.6) +
+    0.12 * Math.sin(y * 2.9 + z * 1.3 + t * 0.7) +
+    0.08 * Math.cos(z * 3.3 - x * 1.1 + t * 1.1)
+  );
 }
+
+const smooth = (v: number) => v * v * (3 - 2 * v);
 
 /**
- * The welcome screen's animated "particle grid": a dot-matrix solid that slowly rotates and
- * morphs between a cube, a sphere and a wave. Canvas 2D, ~30 fps, paused when hidden; a single
- * still frame when the user prefers reduced motion.
+ * Welcome-screen particle animation: dots form a "₹", flow into an irregular organic blob,
+ * and flow back, looping calmly. Canvas 2D at display refresh, paused when hidden; a single
+ * still "₹" frame with reduced motion. `handle.collapse` pulls everything to the centre
+ * (used by the post-sign-in entry animation).
  */
 export function DotShape({
   className,
@@ -65,43 +71,57 @@ export function DotShape({
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = size * dpr;
     canvas.height = size * dpr;
-    ctx.scale(dpr, dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    // a little per-dot jitter so it reads as "hand-drawn dashes", like the reference
-    const jitter = Array.from({ length: COUNT }, (_, index) => {
+    const rupee = sampleRupee();
+    if (rupee.length === 0) return;
+    // each glyph dot gets a home direction on the blob, so neighbours stay neighbours while flowing
+    const dirs = rupee.map(([x, y, z], index) => {
+      const jitterZ = Math.sin(index * 7.13) * 0.9;
+      const len = Math.hypot(x, y, z + jitterZ) || 1;
+      return [x / len, y / len, (z + jitterZ) / len] as Vec;
+    });
+    const jitter = rupee.map((_, index) => {
       const seed = Math.sin(index * 12.9898) * 43758.5453;
       return seed - Math.floor(seed);
     });
 
-    let frame = 0;
-    let last = 0;
-    const start = performance.now();
-    const draw = (now: number) => {
-      const t = (now - start) / 1000;
-      const cycle = 7; // seconds per shape
-      const phase = (t / cycle) % SHAPES.length;
-      const from = SHAPES[Math.floor(phase)];
-      const to = SHAPES[(Math.floor(phase) + 1) % SHAPES.length];
-      const raw = Math.min(1, Math.max(0, (phase % 1) * 1.6 - 0.6)); // hold, then morph
-      const mix = raw * raw * (3 - 2 * raw);
-      const rotY = t * 0.35;
-      const rotX = -0.45 + Math.sin(t * 0.25) * 0.15;
+    // loop: hold ₹ → flow to blob → hold blob → flow back
+    const HOLD_R = 2.6;
+    const FLOW = 2.2;
+    const HOLD_B = 2.6;
+    const LOOP = HOLD_R + FLOW + HOLD_B + FLOW;
+    const blobMix = (t: number) => {
+      const p = t % LOOP;
+      if (p < HOLD_R) return 0;
+      if (p < HOLD_R + FLOW) return smooth((p - HOLD_R) / FLOW);
+      if (p < HOLD_R + FLOW + HOLD_B) return 1;
+      return 1 - smooth((p - HOLD_R - FLOW - HOLD_B) / FLOW);
+    };
+
+    const draw = (t: number) => {
+      const mix = blobMix(t);
+      // a gentle sway (never so far that the ₹ stops reading), a bit more as a blob
+      const rotY = Math.sin(t * 0.45) * (0.35 + mix * 0.5);
+      const rotX = Math.sin(t * 0.3) * 0.12 - mix * 0.2;
       const cy = Math.cos(rotY);
       const sy = Math.sin(rotY);
       const cx = Math.cos(rotX);
       const sx = Math.sin(rotX);
       const collapse = handle?.current?.collapse ?? 0;
-      const scale = size * 0.28 * (1 - collapse * 0.92);
+      const scale = size * 0.4 * (1 - collapse * 0.94);
 
       ctx.clearRect(0, 0, size, size);
       ctx.lineCap = "round";
-      for (let index = 0; index < COUNT; index += 1) {
-        const a = from[index];
-        const b = to[index];
-        let x = a[0] + (b[0] - a[0]) * mix;
-        let y = a[1] + (b[1] - a[1]) * mix;
-        let z = a[2] + (b[2] - a[2]) * mix;
-        // rotate around Y then X
+      for (let index = 0; index < rupee.length; index += 1) {
+        const r = rupee[index];
+        const d = dirs[index];
+        const radius = 0.78 + wobble(d[0], d[1], d[2], t);
+        // glyph dots breathe very slightly so the ₹ never looks frozen
+        const breathe = 1 + Math.sin(t * 1.3 + jitter[index] * 6.28) * 0.012;
+        let x = r[0] * breathe * (1 - mix) + d[0] * radius * mix;
+        let y = r[1] * breathe * (1 - mix) + d[1] * radius * mix;
+        let z = r[2] * (1 - mix) + d[2] * radius * mix;
         const x1 = x * cy + z * sy;
         const z1 = -x * sy + z * cy;
         const y1 = y * cx - z1 * sx;
@@ -109,14 +129,14 @@ export function DotShape({
         x = x1;
         y = y1;
         z = z2;
-        const depth = 1 / (2.8 - z * 0.6);
-        const px = size / 2 + x * scale * depth * 2.2;
-        const py = size / 2 + y * scale * depth * 2.2;
-        const alpha = Math.max(0.15, Math.min(1, 0.35 + (z + 1.3) * 0.32)) * (1 - collapse * 0.4);
-        const len = 1.2 + jitter[index] * 2.4 * (1 - collapse);
-        const angle = jitter[index] * Math.PI + t * 0.4 * (jitter[index] - 0.5);
+        const depth = 1 / (2.4 - z * 0.5);
+        const px = size / 2 + x * scale * depth * 2.4;
+        const py = size / 2 + y * scale * depth * 2.4;
+        const alpha = Math.max(0.2, Math.min(1, 0.55 + z * 0.45)) * (1 - collapse * 0.4);
+        const len = 1 + jitter[index] * 2.2 * (1 - collapse);
+        const angle = jitter[index] * Math.PI + t * 0.35 * (jitter[index] - 0.5);
         ctx.strokeStyle = `rgba(255,255,255,${alpha.toFixed(3)})`;
-        ctx.lineWidth = 1 + depth * 0.6;
+        ctx.lineWidth = 0.9 + depth * 0.7;
         ctx.beginPath();
         ctx.moveTo(px - Math.cos(angle) * len, py - Math.sin(angle) * len);
         ctx.lineTo(px + Math.cos(angle) * len, py + Math.sin(angle) * len);
@@ -125,18 +145,24 @@ export function DotShape({
     };
 
     if (reduce && !handle) {
-      draw(start + 2000);
+      draw(0.5);
       return;
     }
+    const start = performance.now();
+    let frame = 0;
     const loop = (now: number) => {
       frame = requestAnimationFrame(loop);
-      if (document.hidden || now - last < 32) return; // ~30 fps is plenty for a slow drift
-      last = now;
-      draw(reduce ? start + 2000 : now);
+      if (document.hidden) return;
+      draw(reduce ? 0.5 : (now - start) / 1000);
     };
     frame = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(frame);
   }, [size, handle]);
 
   return <canvas ref={canvasRef} aria-hidden className={className} style={{ width: size, height: size }} />;
+}
+
+export interface DotShapeHandle {
+  /** 0 = shape, 1 = every point pulled to the centre */
+  collapse: number;
 }
