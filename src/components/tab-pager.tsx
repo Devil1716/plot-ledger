@@ -29,7 +29,9 @@ const PeopleTab = memo(function PeopleTab() {
 });
 const TAB_VIEWS = [HistoryTab, LedgerTab, PeopleTab];
 const COUNT = TAB_PATHS.length;
-const SPRING = { type: "spring", stiffness: 420, damping: 42, mass: 0.9 } as const;
+// critically damped (ζ≈1.0, ω≈17/s): settles in ~260 ms with no overshoot, and carries the
+// release velocity so a flick feels continuous
+const SPRING = { type: "spring", stiffness: 300, damping: 35, mass: 1 } as const;
 
 /**
  * Instagram-style pager: the three tabs sit side by side; the page follows a horizontal
@@ -156,6 +158,7 @@ export function TabPager({
     let startX = 0;
     let startY = 0;
     let samples: Array<{ x: number; t: number }> = [];
+    let base = 0; // offset already on screen when the finger landed (catching a settle)
     let suppressClick = false;
 
     const onStart = (event: TouchEvent) => {
@@ -187,7 +190,10 @@ export function TabPager({
         }
         state = "dragging";
         samples = [];
+        // catch the page mid-snap: stop the spring and continue from where it is
         settling.current?.stop();
+        base = drag.get();
+        startX = touch.clientX;
         const current = activeRef.current;
         const scrollY = window.scrollY;
         scrolls.current[current] = scrollY;
@@ -196,8 +202,8 @@ export function TabPager({
       }
       if (event.cancelable) event.preventDefault();
       // 1:1 with the finger from where it first touched
-      const raw = dx;
-      drag.set(edgeResist(raw, activeRef.current, COUNT));
+      const raw = base + (touch.clientX - startX);
+      drag.set(edgeResist(raw, activeRef.current, COUNT, width.get()));
       const now = performance.now();
       samples.push({ x: touch.clientX, t: now });
       while (samples.length > 2 && now - samples[0].t > 90) samples.shift();

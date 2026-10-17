@@ -12,6 +12,8 @@ async function signIn(page: Page, account: string, expectLedger = true) {
   await page.getByRole("button", { name: account }).click();
   await expect(page.getByRole("heading", { name: "Who owns how much of the plot" })).toHaveCount(0);
   if (expectLedger) await expect(page.getByTestId("collected-total")).toBeVisible();
+  // the post-sign-in entry animation is short and covers the screen while it plays
+  await expect(page.getByTestId("entry-transition")).toHaveCount(0, { timeout: 5000 });
 }
 
 /** The ledger has no visible "Add payment" button (pull down instead); keyboard / screen readers use this. */

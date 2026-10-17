@@ -6,6 +6,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { BookOpenText, LayoutGrid, LogOut, Users } from "lucide-react";
 import { Avatar } from "@/components/avatar";
+import { EntryTransition } from "@/components/brand/entry-transition";
 import { useLedger } from "@/components/ledger-provider";
 import { TabPager } from "@/components/tab-pager";
 import { cn } from "cn";
@@ -91,6 +92,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <MotionConfig reducedMotion="user">
     <div className="app-dark min-h-full text-white">
       <div aria-hidden className="status-scrim" />
+      <EntryTransition />
       <header className="mx-auto flex w-full max-w-6xl items-center gap-3 px-5 pt-[calc(1.25rem+var(--safe-top))] pb-2">
         {profile?.photoURL ? (
           <Avatar name={profile.displayName} photoURL={profile.photoURL} className="size-11 ring-2 ring-white/15" />

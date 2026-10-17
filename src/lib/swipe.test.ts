@@ -33,8 +33,14 @@ describe("settleTab", () => {
     expect(settleTab(2, 3, -300, -1, W)).toBe(2);
   });
   it("resists at the edges", () => {
-    expect(edgeResist(100, 0, 3)).toBe(25);
     expect(edgeResist(-100, 0, 3)).toBe(-100);
+    const small = edgeResist(20, 0, 3, 400);
+    const big = edgeResist(400, 0, 3, 400);
+    expect(small).toBeGreaterThan(0);
+    expect(small).toBeLessThan(20);
+    expect(big).toBeLessThan(400 * 0.35);
+    expect(edgeResist(800, 0, 3, 400)).toBeGreaterThan(big);
+    expect(edgeResist(-400, 2, 3, 400)).toBeCloseTo(-big);
   });
 });
 

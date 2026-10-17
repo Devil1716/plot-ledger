@@ -36,9 +36,16 @@ export function settleTab(active: number, count: number, drag: number, velocity:
   return far || flick ? target : active;
 }
 
-/** Rubber band past the first/last tab. */
-export function edgeResist(drag: number, active: number, count: number): number {
-  if ((drag > 0 && active === 0) || (drag < 0 && active === count - 1)) return drag * 0.25;
+/**
+ * Rubber band past the first/last tab, iOS-style: follows the finger at first, then stiffens,
+ * never going past ~a third of the screen.
+ */
+export function edgeResist(drag: number, active: number, count: number, width = 400): number {
+  if ((drag > 0 && active === 0) || (drag < 0 && active === count - 1)) {
+    const limit = width * 0.35;
+    const d = Math.abs(drag);
+    return Math.sign(drag) * limit * (1 - 1 / ((d * 0.55) / limit + 1));
+  }
   return drag;
 }
 
