@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { listVariants, motion, sideItemVariants } from "@/components/motion-bits";
 import { toast } from "sonner";
 import { authErrorMessage, useLedger } from "@/components/ledger-provider";
@@ -147,6 +147,7 @@ export function PeopleView() {
       <p className="text-muted-foreground pt-2 text-center text-xs" data-testid="app-version">
         Plot Ledger v{BUNDLE_VERSION} · build {BUNDLE_NATIVE_BUILD}
       </p>
+      <UpdateStatus />
     </div>
   );
 }
@@ -353,4 +354,20 @@ function PendingRow({ account, free, self }: { account: UserRecord; free: Person
       </div>
     </li>
   );
+}
+
+function UpdateStatus() {
+  const [text, setText] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("plotledger:update-status");
+      if (!raw) return;
+      const { at, result } = JSON.parse(raw) as { at: string; result: string };
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reads storage once after mount
+      setText(`Update check ${new Date(at).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" })}: ${result}`);
+    } catch {
+      // ignore
+    }
+  }, []);
+  return text ? <p className="text-muted-foreground -mt-2 text-center text-[11px]" data-testid="update-status">{text}</p> : null;
 }

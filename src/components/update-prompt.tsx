@@ -6,7 +6,7 @@ import { Download, ShieldCheck, X } from "lucide-react";
 import { App } from "@capacitor/app";
 import { CapacitorHttp } from "@capacitor/core";
 import { nativePlatform } from "@/lib/native";
-import { BUNDLE_VERSION, MANIFEST_URL, parseManifest, planUpdate, type UpdatePlan } from "@/lib/app-update";
+import { BUNDLE_VERSION, MANIFEST_URL, parseManifest, planUpdate, UPDATE_REPO, type UpdatePlan } from "@/lib/app-update";
 import { ApkUpdater } from "@/lib/apk-updater";
 import { toast } from "sonner";
 
@@ -33,16 +33,67 @@ function announceNewVersion(runningOtaBundle: boolean) {
   }
 }
 
-async function fetchManifest() {
-  // native HTTP: no CORS, follows GitHub's redirect to the asset CDN
-  const response = await CapacitorHttp.get({
-    url: `${MANIFEST_URL}?t=${Date.now()}`,
-    headers: { Accept: "application/json" },
-    responseType: "json",
+export const UPDATE_STATUS_KEY = "plotledger:update-status";
+
+function noteStatus(result: string) {
+  try {
+    localStorage.setItem(UPDATE_STATUS_KEY, JSON.stringify({ at: new Date().toISOString(), result }));
+  } catch {
+    // storage unavailable
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
   });
-  if (response.status !== 200) return null;
-  const data = typeof response.data === "string" ? JSON.parse(response.data) : response.data;
-  return parseManifest(data);
+}
+
+async function getJson(url: string): Promise<unknown> {
+  // native HTTP: no CORS, follows GitHub's redirect to the asset CDN
+  const response = await withTimeout(
+    CapacitorHttp.get({
+      url,
+      headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+      responseType: "json",
+      connectTimeout: 30000,
+      readTimeout: 30000,
+    }),
+    60000,
+    `timed out fetching ${url.split("?")[0]}`,
+  );
+  if (response.status !== 200) throw new Error(`HTTP ${response.status} for ${url.split("?")[0]}`);
+  return typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+}
+
+async function fetchManifest() {
+  // Ask the releases API which release is latest, then read that release's update.json
+  // by its versioned URL (the /latest/download redirect can lag behind a new release).
+  try {
+    const release = (await getJson(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`)) as {
+      assets?: { name?: string; browser_download_url?: string }[];
+    };
+    const asset = release.assets?.find((item) => item.name === "update.json")?.browser_download_url;
+    if (asset) {
+      const manifest = parseManifest(await getJson(`${asset}?t=${Date.now()}`));
+      if (manifest) return manifest;
+    }
+  } catch {
+    // API rate limit / offline: fall back to the redirect below
+  }
+  const manifest = parseManifest(await getJson(`${MANIFEST_URL}?t=${Date.now()}`));
+  if (!manifest) throw new Error("update.json is not valid");
+  return manifest;
 }
 
 /**
@@ -96,11 +147,20 @@ export function UpdatePrompt() {
       busy.current = true;
       lastCheck.current = Date.now();
       try {
+        noteStatus("checking…");
         const { CapacitorUpdater } = await import("@capgo/capacitor-updater");
-        const [info, manifest] = await Promise.all([App.getInfo(), fetchManifest()]);
+        const info = await withTimeout(App.getInfo(), 5000, "app info timed out");
+        noteStatus("fetching update.json…");
+        const manifest = await fetchManifest();
         const plan = planUpdate(manifest, { nativeBuild: Number(info.build) || 0, bundleVersion: BUNDLE_VERSION });
-        if (cancelled) return;
+        noteStatus(
+          plan.kind === "none"
+            ? `up to date (latest ${manifest.version}, build ${manifest.nativeBuild}; this is ${BUNDLE_VERSION}, build ${info.build})`
+            : `${plan.kind === "ota" ? "web update" : "app update"} ${plan.version} found`,
+        );
+        // keep going even if this component re-rendered: downloads are idempotent
         if (plan.kind === "apk") {
+          if (cancelled) return;
           setApkPlan(plan);
           setHidden(false);
           void downloadApk(plan);
@@ -112,9 +172,11 @@ export function UpdatePrompt() {
             existing ??
             (await CapacitorUpdater.download({ url: plan.bundle.url, version: plan.version, checksum: plan.bundle.sha256 }));
           await CapacitorUpdater.next({ id: bundle.id });
+          noteStatus(`web update ${plan.version} downloaded; applies on next launch`);
         }
-      } catch {
+      } catch (error) {
         // offline / GitHub hiccup: try again next launch
+        noteStatus(`check failed: ${error instanceof Error ? error.message : String(error)}`);
       } finally {
         busy.current = false;
       }
@@ -125,18 +187,20 @@ export function UpdatePrompt() {
       try {
         const { CapacitorUpdater } = await import("@capgo/capacitor-updater");
         // React rendered, so this bundle is healthy: keep it.
-        const ready = await CapacitorUpdater.notifyAppReady();
+        noteStatus("starting…");
+        const ready = await withTimeout(CapacitorUpdater.notifyAppReady(), 5000, "notifyAppReady timed out");
         runningOta = ready.bundle.id !== "builtin";
         // A bundle downloaded last time is normally swapped in when the app goes to the
         // background. If the app was killed instead, apply it now, on this cold start.
-        const next = await CapacitorUpdater.getNextBundle();
+        const next = await withTimeout(CapacitorUpdater.getNextBundle(), 5000, "getNextBundle timed out");
         if (next && next.id !== ready.bundle.id && next.status !== "error" && !coldStartApplied) {
           coldStartApplied = true;
           await CapacitorUpdater.set({ id: next.id });
           return;
         }
-      } catch {
+      } catch (error) {
         // plugin missing in an old shell: nothing to confirm
+        noteStatus(`boot: ${error instanceof Error ? error.message : String(error)}`);
       }
       announceNewVersion(runningOta);
       void check();
