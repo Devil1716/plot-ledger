@@ -54,3 +54,7 @@ ui-debug.log
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# signing keys (CI restores them from secrets)
+*.jks
+*.keystore

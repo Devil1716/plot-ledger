@@ -2,22 +2,19 @@
 
 import { useMemo, useState } from "react";
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
-import { ArrowDownAZ, ArrowDownWideNarrow, ChevronDown, IndianRupee, Percent, Ruler } from "lucide-react";
-import { LandPlot } from "@/components/land-plot";
+import { ArrowDownAZ, ArrowDownWideNarrow, ChevronDown, IndianRupee, Percent } from "lucide-react";
 import { CountUp, itemVariants, listVariants } from "@/components/motion-bits";
 import {
   formatInrCompactFromPaise,
   formatInrFromPaise,
   formatLedgerDate,
   formatPercentHundredths,
-  formatSqftHundredths,
-  LAND_SQFT,
 } from "@/lib/ledger-math";
 import type { ShareRow } from "@/lib/ledger-math";
 import type { PaymentRecord, PersonRecord } from "@/lib/records";
 
 type Sort = "share" | "paid" | "az";
-type Metric = "pct" | "sqft" | "inr";
+type Metric = "pct" | "inr";
 const SORTS: { id: Sort; label: string; icon: typeof ArrowDownAZ }[] = [
   { id: "share", label: "by share", icon: ArrowDownWideNarrow },
   { id: "paid", label: "by amount paid", icon: IndianRupee },
@@ -25,7 +22,6 @@ const SORTS: { id: Sort; label: string; icon: typeof ArrowDownAZ }[] = [
 ];
 const METRICS: { id: Metric; label: string; icon: typeof Percent }[] = [
   { id: "pct", label: "percent", icon: Percent },
-  { id: "sqft", label: "square feet", icon: Ruler },
   { id: "inr", label: "rupees paid", icon: IndianRupee },
 ];
 const SLATE = "#94A3B8";
@@ -63,7 +59,6 @@ export function SharesPanel({
         role: person.role,
         amountPaise: 0,
         percentHundredths: 0,
-        sqftHundredths: 0,
       },
     }));
     const owner = list.filter((row) => row.person.role === "homeowner");
@@ -133,9 +128,7 @@ export function SharesPanel({
           const value =
             metric === "pct"
               ? formatPercentHundredths(share.percentHundredths)
-              : metric === "sqft"
-                ? `${formatSqftHundredths(share.sqftHundredths)}`
-                : formatInrCompactFromPaise(share.amountPaise);
+              : formatInrCompactFromPaise(share.amountPaise);
           return (
             <motion.li
               key={person.id}
@@ -185,7 +178,7 @@ export function SharesPanel({
                     ) : null}
                   </span>
                   <span className="mt-0.5 block truncate text-xs text-[var(--muted-foreground)] tabular-nums">
-                    {formatInrFromPaise(share.amountPaise)} paid · {formatSqftHundredths(share.sqftHundredths)} sq ft
+                    {formatInrFromPaise(share.amountPaise)} paid
                   </span>
                 </span>
                 <span className="flex shrink-0 items-center gap-1">
@@ -203,7 +196,6 @@ export function SharesPanel({
                       ) : (
                         value
                       )}
-                      {metric === "sqft" ? <span className="ml-0.5 text-xs font-medium text-[var(--muted-foreground)]">ft²</span> : null}
                     </motion.span>
                   </AnimatePresence>
                   <motion.span animate={{ rotate: isOpen ? 180 : 0 }} className="text-[#94a3b8]">
@@ -234,12 +226,11 @@ export function SharesPanel({
                     className="flex gap-4 border-t border-[var(--border)] bg-[#fafbfc] px-3.5 py-3.5"
                     data-testid={`share-detail-${person.id}`}
                   >
-                    <div className="h-28 shrink-0">
-                      <LandPlot people={people} shares={shares} highlightId={person.id} compact />
-                    </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-medium text-[var(--muted-foreground)]">
-                        {isOwner ? "Homeowner · payments recorded, no land share" : `${formatSqftHundredths(share.sqftHundredths)} sq ft of ${LAND_SQFT.toLocaleString("en-IN")}`}
+                        {isOwner
+                          ? "Homeowner · payments recorded, no ownership share"
+                          : `${formatPercentHundredths(share.percentHundredths)} ownership · ${formatInrFromPaise(share.amountPaise)} paid`}
                       </p>
                       {personPayments.length === 0 ? (
                         <p className="mt-2 text-sm text-[var(--muted-foreground)]">No payments yet.</p>
@@ -292,6 +283,7 @@ function Donut({
   const C = 2 * Math.PI * R;
   const GAP = 2.2;
   const segments = rows.filter((row) => row.person.role === "contributor" && row.share.percentHundredths > 0);
+  const poolPaise = rows.reduce((sum, row) => (row.person.role === "contributor" ? sum + row.share.amountPaise : sum), 0);
   const arcs = segments.map((row, index) => {
     const before = segments.slice(0, index).reduce((sum, item) => sum + item.share.percentHundredths, 0);
     const len = (row.share.percentHundredths / 10_000) * C;
@@ -339,10 +331,10 @@ function Donut({
         <AnimatePresence mode="wait">
           <motion.g key={focusName ?? "total"} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} transition={{ duration: 0.2 }} style={{ transformOrigin: "60px 60px" }}>
             <text x="60" y="57" textAnchor="middle" className="tabular-nums" style={{ fontSize: 15, fontWeight: 700, fill: "#0f1524" }}>
-              {focusName && focusPct !== null ? formatPercentHundredths(focusPct) : LAND_SQFT.toLocaleString("en-IN")}
+              {focusName && focusPct !== null ? formatPercentHundredths(focusPct) : formatInrCompactFromPaise(poolPaise)}
             </text>
             <text x="60" y="71" textAnchor="middle" style={{ fontSize: 7, fill: "#5a6478" }}>
-              {focusName ? focusName.split(" ")[0] : "sq ft in total"}
+              {focusName ? focusName.split(" ")[0] : "contributor pool"}
             </text>
           </motion.g>
         </AnimatePresence>

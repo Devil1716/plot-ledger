@@ -66,7 +66,7 @@ export function LoginForm() {
         <p className="text-xs tracking-[0.18em] text-white/65 uppercase">Plot Ledger</p>
         <h1 className="mt-2 text-4xl leading-tight font-semibold tracking-tight sm:text-5xl">Who owns how much of the plot</h1>
         <p className="mt-4 max-w-md text-base text-white/70">
-          The target is ₹1.20 crore for 5,670 sq ft. Contributor ownership follows what each contributor paid.
+          The target is ₹1.20 crore. Contributor ownership follows what each contributor paid.
           The homeowner&apos;s money is recorded, and their share stays at zero.
         </p>
       </motion.section>

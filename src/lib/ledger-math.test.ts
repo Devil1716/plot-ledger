@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  LAND_SQFT,
   PERCENT_HUNDREDTHS_TOTAL,
-  SQFT_HUNDREDTHS_TOTAL,
   TARGET_PAISE,
   allocateLargestRemainder,
   collectedPaise,
@@ -10,11 +8,9 @@ import {
   formatInrCompactFromPaise,
   formatInrFromPaise,
   formatPercentHundredths,
-  formatSqftHundredths,
   parseIsoDate,
   parseRupeesToPaise,
   planRoleChange,
-  plotBands,
   targetProgress,
   type SharePerson,
   type ShareRow,
@@ -43,12 +39,6 @@ function contributorPercentSum(rows: ShareRow[]): number {
     .reduce((sum, row) => sum + row.percentHundredths, 0);
 }
 
-function contributorSqftSum(rows: ShareRow[]): number {
-  return rows
-    .filter((row) => row.role === "contributor")
-    .reduce((sum, row) => sum + row.sqftHundredths, 0);
-}
-
 describe("computeShares", () => {
   it("gives a 25L contributor 25% when contributors paid 1Cr and ignores the homeowner", () => {
     const rows = computeShares(roster, [
@@ -58,15 +48,11 @@ describe("computeShares", () => {
     ]);
 
     expect(byId(rows, "kavita").percentHundredths).toBe(2_500);
-    expect(byId(rows, "kavita").sqftHundredths).toBe(141_750);
     expect(byId(rows, "rohan").percentHundredths).toBe(7_500);
     expect(byId(rows, "suresh").percentHundredths).toBe(0);
-    expect(byId(rows, "suresh").sqftHundredths).toBe(0);
     expect(byId(rows, "suresh").amountPaise).toBe(20 * LAKH);
     expect(contributorPercentSum(rows)).toBe(PERCENT_HUNDREDTHS_TOTAL);
-    expect(contributorSqftSum(rows)).toBe(SQFT_HUNDREDTHS_TOTAL);
     expect(formatPercentHundredths(byId(rows, "kavita").percentHundredths)).toBe("25.00%");
-    expect(formatSqftHundredths(byId(rows, "kavita").sqftHundredths)).toBe("1,417.50");
   });
 
   it("splits the worked example across five contributors and keeps the total at 1.2 crore", () => {
@@ -86,28 +72,21 @@ describe("computeShares", () => {
     expect(byId(rows, "arjun").percentHundredths).toBe(1_500);
     expect(byId(rows, "meera").percentHundredths).toBe(1_000);
     expect(byId(rows, "suresh").percentHundredths).toBe(0);
-    expect(byId(rows, "ananya").sqftHundredths).toBe(170_100);
-    expect(byId(rows, "kavita").sqftHundredths).toBe(141_750);
-    expect(byId(rows, "arjun").sqftHundredths).toBe(85_050);
     expect(contributorPercentSum(rows)).toBe(10_000);
-    expect(contributorSqftSum(rows)).toBe(567_000);
     expect(collectedPaise(payments)).toBe(TARGET_PAISE);
-    expect(LAND_SQFT).toBe(5_670);
   });
 
   it("returns zeros and does not divide when nobody has paid", () => {
     const rows = computeShares(roster, []);
-    expect(rows.every((row) => row.percentHundredths === 0 && row.sqftHundredths === 0)).toBe(true);
+    expect(rows.every((row) => row.percentHundredths === 0)).toBe(true);
     expect(rows.every((row) => row.amountPaise === 0)).toBe(true);
     expect(contributorPercentSum(rows)).toBe(0);
-    expect(contributorSqftSum(rows)).toBe(0);
   });
 
   it("keeps every share at 0% when only the homeowner has paid", () => {
     const rows = computeShares(roster, [{ personId: "suresh", amountPaise: 50 * LAKH }]);
     expect(rows.every((row) => row.percentHundredths === 0)).toBe(true);
     expect(byId(rows, "suresh").amountPaise).toBe(50 * LAKH);
-    expect(contributorSqftSum(rows)).toBe(0);
   });
 
   it("does not let a later homeowner payment change contributor percentages", () => {
@@ -121,7 +100,6 @@ describe("computeShares", () => {
       { personId: "suresh", amountPaise: 90 * LAKH },
     ]);
     expect(byId(after, "kavita").percentHundredths).toBe(byId(before, "kavita").percentHundredths);
-    expect(byId(after, "rohan").sqftHundredths).toBe(byId(before, "rohan").sqftHundredths);
   });
 
   it("rounds one-third shares so the displayed percentages sum to 100", () => {
@@ -141,14 +119,12 @@ describe("computeShares", () => {
       3_334, 3_333, 3_333,
     ]);
     expect(contributorPercentSum(rows)).toBe(PERCENT_HUNDREDTHS_TOTAL);
-    expect(contributorSqftSum(rows)).toBe(SQFT_HUNDREDTHS_TOTAL);
     expect(byId(rows, "h").percentHundredths).toBe(0);
   });
 
-  it("gives unpaid contributors nothing while the payers still fill the plot", () => {
+  it("gives unpaid contributors nothing while the payers share 100%", () => {
     const rows = computeShares(roster, [{ personId: "meera", amountPaise: 1 }]);
     expect(byId(rows, "meera").percentHundredths).toBe(PERCENT_HUNDREDTHS_TOTAL);
-    expect(byId(rows, "meera").sqftHundredths).toBe(SQFT_HUNDREDTHS_TOTAL);
     expect(byId(rows, "ananya").percentHundredths).toBe(0);
     expect(contributorPercentSum(rows)).toBe(PERCENT_HUNDREDTHS_TOTAL);
   });
@@ -164,7 +140,6 @@ describe("computeShares", () => {
     ]);
     expect(byId(rows, "a").percentHundredths + byId(rows, "b").percentHundredths).toBe(10_000);
     expect(byId(rows, "b").percentHundredths).toBeGreaterThan(byId(rows, "a").percentHundredths);
-    expect(byId(rows, "a").sqftHundredths + byId(rows, "b").sqftHundredths).toBe(SQFT_HUNDREDTHS_TOTAL);
   });
 
   it("rejects fractional paise and unknown people", () => {
@@ -177,35 +152,12 @@ describe("computeShares", () => {
   });
 });
 
-describe("allocation and plot geometry", () => {
+describe("allocation", () => {
   it("breaks remainder ties toward the earlier person", () => {
     expect(allocateLargestRemainder([1n, 1n, 1n], 10_000n).map(Number)).toEqual([3334, 3333, 3333]);
   });
 
-  it("draws homeowner payments off the plot and fills 105 ft when contributors have paid", () => {
-    const rows = computeShares(roster, [
-      { personId: "kavita", amountPaise: 25 * LAKH },
-      { personId: "rohan", amountPaise: 75 * LAKH },
-      { personId: "suresh", amountPaise: 20 * LAKH },
-    ]);
-    const bands = plotBands(
-      rows.map((row) => ({
-        ...row,
-        name: row.personId,
-        color: "#112233",
-      })),
-    );
-    expect(bands.map((band) => band.id)).toEqual(["rohan", "kavita"]);
-    expect(bands.reduce((sum, band) => sum + band.height, 0)).toBe(105);
-  });
 
-  it("shows the whole plot as unallocated when the contributor pool is empty", () => {
-    const rows = computeShares(roster, [{ personId: "suresh", amountPaise: LAKH }]);
-    const bands = plotBands(rows.map((row) => ({ ...row, name: row.personId, color: "#112233" })));
-    expect(bands).toEqual([
-      expect.objectContaining({ id: "unallocated", height: 105 }),
-    ]);
-  });
 });
 
 describe("money formatting", () => {

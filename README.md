@@ -1,18 +1,55 @@
 # Plot Ledger
 
-A mobile-friendly ledger for a shared plot. Six people — five contributors and one homeowner — record what they paid toward a **₹1.20 crore** target (`₹1,20,00,000`). The land is **54 ft × 105 ft** (5,670 sq ft).
+A mobile-friendly ledger for a shared plot. Six people — five contributors and one homeowner — record what they paid toward a **₹1.20 crore** target (`₹1,20,00,000`).
 
 Ownership is not split evenly. A contributor's share is:
 
 **their payments ÷ all contributors' payments**
 
-The homeowner's payments are stored, shown in the history, and counted in the total collected. They are excluded from the denominator, and the homeowner's share stays at **0%**. Amounts are stored as integer paise. Percentages and square feet use largest-remainder rounding so they add up to 100% and 5,670 sq ft when anyone in the contributor pool has paid.
+The homeowner's payments are stored, shown in the history, and counted in the total collected. They are excluded from the denominator, and the homeowner's share stays at **0%**. Amounts are stored as integer paise. Percentages use largest-remainder rounding so they add up to exactly 100% when anyone in the contributor pool has paid.
 
 Signed-in members can see every share and the full history. An admin (the first account, then anyone they add) can add, edit, and delete payments, edit the roster, and link logins to people. Every change writes an audit entry.
 
 ## Download
 
 Android app (APK): **[latest release](https://github.com/Devil1716/plot-ledger/releases/latest)**. Download the `.apk` from the release assets and open it on your phone (allow installs from your browser when Android asks). iOS builds need a Mac with Xcode; see "Native apps" below.
+
+The Android app checks GitHub for a newer release when it starts and when you switch back to it. If there is one, it shows **Update available**; tap **Update**, then open the downloaded APK. It installs over the existing app and keeps you signed in.
+
+## Releasing an update (CI/CD)
+
+GitHub Actions does the building (`.github/workflows/`):
+
+- **CI** (`ci.yml`) runs on every push to `main` and on every pull request: lint, typecheck, unit tests, security-rules tests and the Playwright end-to-end test (both against the Firebase emulators).
+- **Release** (`release.yml`) builds the production Android APK, signs it with the same key as the current installs, and publishes a GitHub release with `plot-ledger.apk` attached. Phones then get the update prompt.
+
+Start a release in either of two ways:
+
+```bash
+# 1. push a version tag
+git tag v1.1.0 && git push origin v1.1.0
+```
+
+2. **Actions → Release → Run workflow**: choose `patch` / `minor` / `major` (bumps the latest `v*` tag) or type an exact version.
+
+The workflow sets `versionName` from the tag and `versionCode` to `100 + run number`, so every build is newer than the last one.
+
+One-time setup, already done for this repo:
+
+| Name | Kind | Value |
+| --- | --- | --- |
+| `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID` | Actions **variables** | Public Firebase web config (same as `.env.production.example`) |
+| `PL_KEYSTORE_BASE64` | Actions **secret** | `base64 -w0 <keystore>` of the signing key |
+| `PL_KEYSTORE_PASSWORD`, `PL_KEY_ALIAS`, `PL_KEY_PASSWORD` | Actions **secrets** | Keystore password, key alias, key password |
+| `FIREBASE_SERVICE_ACCOUNT` | Actions secret, optional | Service-account JSON. If set, each release also deploys `firestore.rules` and indexes; if not, that step is skipped |
+
+```bash
+gh variable set NEXT_PUBLIC_FIREBASE_PROJECT_ID --body plot-ledger-ss1017   # etc.
+base64 -w0 path/to/key.keystore | gh secret set PL_KEYSTORE_BASE64
+gh secret set PL_KEYSTORE_PASSWORD   # prompts for the value
+```
+
+Never commit the keystore (`*.jks` and `*.keystore` are gitignored). If the signing key ever changes, Android refuses to install the update over the old app: users would have to uninstall first and sign in again.
 
 ## Local setup
 
@@ -119,4 +156,4 @@ The released APK talks to the real Firebase project **`plot-ledger-ss1017`** (Sp
 
 ### Real phones need a real Firebase project
 
-The demo project only exists inside the local emulators. For the apps to work on real phones away from the dev machine, follow "Plug in a real Firebase project" above, put that config in `.env.local` with `NEXT_PUBLIC_USE_EMULATORS=false`, and build with `CAP_USE_EMULATORS=false pnpm build:native` (turns off cleartext / mixed content). `localhost` must stay in Firebase Auth's authorized domains, because the apps are served from `https://localhost` (Android) and `capacitor://localhost` (iOS). Release builds also need your own Android signing keystore and an Apple distribution certificate.
+The demo project only exists inside the local emulators. For the apps to work on real phones away from the dev machine, follow "Plug in a real Firebase project" above, put that config in `.env.local` with `NEXT_PUBLIC_USE_EMULATORS=false`, and build with `CAP_USE_EMULATORS=false pnpm build:native` (turns off cleartext / mixed content). `localhost` must stay in Firebase Auth's authorized domains, because the apps are served from `https://localhost` (Android) and `capacitor://localhost` (iOS). Android release signing is handled by the Release workflow (see above); iOS still needs an Apple distribution certificate.

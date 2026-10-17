@@ -3,6 +3,7 @@ import { Fraunces, Outfit } from "next/font/google";
 import { LedgerProvider } from "@/components/ledger-provider";
 import { NativeShell } from "@/components/native-shell";
 import { OfflineBanner } from "@/components/offline-banner";
+import { UpdatePrompt } from "@/components/update-prompt";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
@@ -35,6 +36,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col">
         <NativeShell />
         <OfflineBanner />
+        <UpdatePrompt />
         <LedgerProvider>
           {children}
           <Toaster position="top-center" />

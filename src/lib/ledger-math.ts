@@ -1,10 +1,6 @@
 export const TARGET_RUPEES = 12_000_000;
 export const TARGET_PAISE = 1_200_000_000;
-export const LAND_WIDTH_FT = 54;
-export const LAND_DEPTH_FT = 105;
-export const LAND_SQFT = LAND_WIDTH_FT * LAND_DEPTH_FT;
 export const PERCENT_HUNDREDTHS_TOTAL = 10_000;
-export const SQFT_HUNDREDTHS_TOTAL = LAND_SQFT * 100;
 export const MAX_PAYMENT_PAISE = 10_000_000_000;
 
 export type PersonRole = "contributor" | "homeowner";
@@ -25,22 +21,6 @@ export interface ShareRow {
   amountPaise: number;
   /** 10000 = 100.00%. Contributor rows sum to 10000 when anyone has paid. */
   percentHundredths: number;
-  /** 567000 = 5,670.00 sq ft. Contributor rows sum to that when anyone has paid. */
-  sqftHundredths: number;
-}
-
-export interface PlotBandInput extends ShareRow {
-  name: string;
-  color: string;
-}
-
-export interface PlotBand {
-  id: string;
-  name: string;
-  color: string;
-  y: number;
-  height: number;
-  sqftHundredths: number;
 }
 
 const CRORE_RUPEES = 10_000_000;
@@ -121,7 +101,6 @@ export function computeShares(people: SharePerson[], payments: SharePayment[]): 
   const contributors = people.filter((person) => person.role === "contributor");
   const weights = contributors.map((person) => totals.get(person.id) ?? 0n);
   const percentAlloc = allocateLargestRemainder(weights, BigInt(PERCENT_HUNDREDTHS_TOTAL));
-  const sqftAlloc = allocateLargestRemainder(weights, BigInt(SQFT_HUNDREDTHS_TOTAL));
   const contributorIndex = new Map(contributors.map((person, index) => [person.id, index]));
 
   return people.map((person) => {
@@ -132,7 +111,6 @@ export function computeShares(people: SharePerson[], payments: SharePayment[]): 
       role: person.role,
       amountPaise: Number(amount),
       percentHundredths: index === undefined ? 0 : Number(percentAlloc[index] ?? 0n),
-      sqftHundredths: index === undefined ? 0 : Number(sqftAlloc[index] ?? 0n),
     };
   });
 }
@@ -159,40 +137,6 @@ export function targetProgress(collected: number): {
   const percentHundredths =
     collected === 0 ? 0 : Number((BigInt(collected) * 10_000n) / BigInt(TARGET_PAISE));
   return { remainingPaise, overPaise, percentHundredths };
-}
-
-export function plotBands(rows: PlotBandInput[]): PlotBand[] {
-  const active = rows.filter((row) => row.role === "contributor" && row.sqftHundredths > 0);
-  if (active.length === 0) {
-    return [
-      {
-        id: "unallocated",
-        name: "Unallocated",
-        color: "#E4E7ED",
-        y: 0,
-        height: LAND_DEPTH_FT,
-        sqftHundredths: SQFT_HUNDREDTHS_TOTAL,
-      },
-    ];
-  }
-
-  let y = 0;
-  return active.map((row, index) => {
-    const height =
-      index === active.length - 1
-        ? LAND_DEPTH_FT - y
-        : (row.sqftHundredths * LAND_DEPTH_FT) / SQFT_HUNDREDTHS_TOTAL;
-    const band: PlotBand = {
-      id: row.personId,
-      name: row.name,
-      color: row.color,
-      y,
-      height,
-      sqftHundredths: row.sqftHundredths,
-    };
-    y += height;
-    return band;
-  });
 }
 
 export interface RoleChange {
@@ -277,14 +221,6 @@ export function formatPercentHundredths(hundredths: number): string {
   const whole = Math.floor(hundredths / 100);
   const fraction = hundredths % 100;
   return `${whole}.${fraction.toString().padStart(2, "0")}%`;
-}
-
-export function formatSqftHundredths(hundredths: number): string {
-  assertNonNegativeSafeInteger(hundredths, "sqft");
-  const whole = Math.floor(hundredths / 100);
-  const fraction = hundredths % 100;
-  const formatted = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(whole);
-  return `${formatted}.${fraction.toString().padStart(2, "0")}`;
 }
 
 export function parseIsoDate(value: string): Date | null {

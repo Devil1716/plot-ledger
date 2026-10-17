@@ -7,8 +7,9 @@ android {
         applicationId "com.devil1716.plotledger"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 8
-        versionName "1.0.2"
+        // CI passes -PversionCode=<n> -PversionName=<x.y.z> (see .github/workflows/release.yml)
+        versionCode((project.findProperty("versionCode") ?: "8") as Integer)
+        versionName((project.findProperty("versionName") ?: "1.0.2") as String)
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,12 +17,24 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        // CI: the keystore comes from GitHub Actions secrets (never committed).
+        // It is the same key the existing installs were signed with, so updates
+        // install over the app without uninstalling.
+        if (System.getenv("PL_KEYSTORE_PATH")) {
+            release {
+                storeFile file(System.getenv("PL_KEYSTORE_PATH"))
+                storePassword System.getenv("PL_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("PL_KEY_ALIAS")
+                keyPassword System.getenv("PL_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
-            // Release build (not debuggable, optimized). Signed with the local
-            // debug key so it installs over earlier debug-signed APKs; swap in a
-            // real upload key before publishing to Play.
-            signingConfig signingConfigs.debug
+            // Release build (not debuggable, optimized). Locally it falls back to
+            // the debug key, which is the key current installs use.
+            signingConfig System.getenv("PL_KEYSTORE_PATH") ? signingConfigs.release : signingConfigs.debug
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

@@ -45,7 +45,9 @@ test("admin records payments and a member sees the updated shares", async ({ bro
   await addPayment(adminPage, "Suresh Krishnan · Homeowner", "20,00,000", "2026-01-18", "Homeowner payment");
 
   await expect(adminPage.getByTestId("share-kavita")).toContainText("25.00%");
-  await expect(adminPage.getByTestId("share-kavita")).toContainText("1,417.50");
+  await expect(adminPage.getByTestId("share-kavita")).toContainText("₹25,00,000 paid");
+  await expect(adminPage.getByTestId("share-kavita")).not.toContainText("sq ft");
+  await expect(adminPage.getByText(/Land split|sq ft/)).toHaveCount(0);
   await expect(adminPage.getByTestId("share-rohan")).toContainText("75.00%");
   await expect(adminPage.getByTestId("share-suresh")).toContainText("0.00%");
   await expect(adminPage.getByTestId("share-suresh")).toContainText("₹20,00,000");

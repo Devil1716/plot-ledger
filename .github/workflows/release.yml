@@ -1,0 +1,185 @@
+name: Release
+
+# Ship a new Android build:
+#   git tag v1.2.0 && git push origin v1.2.0
+# or Actions > Release > Run workflow (bumps the latest tag by patch/minor/major).
+# The app checks the latest GitHub release on launch and offers the update.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump from the latest v* tag
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      version:
+        description: Exact version instead (e.g. 1.4.0). Leave empty to bump.
+        required: false
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    name: Build signed APK and publish release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Firebase web config is public by design (rules enforce access); kept in repo variables.
+      NEXT_PUBLIC_FIREBASE_API_KEY: ${{ vars.NEXT_PUBLIC_FIREBASE_API_KEY }}
+      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ vars.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+      NEXT_PUBLIC_FIREBASE_APP_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_APP_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Work out the version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+          EXACT: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            TAG="$GITHUB_REF_NAME"
+          elif [ -n "$EXACT" ]; then
+            TAG="v${EXACT#v}"
+          else
+            LAST=$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n1)
+            IFS=. read -r MA MI PA <<< "${LAST#v}"
+            MA=${MA:-0}; MI=${MI:-0}; PA=${PA:-0}
+            case "$BUMP" in
+              major) MA=$((MA+1)); MI=0; PA=0 ;;
+              minor) MI=$((MI+1)); PA=0 ;;
+              *) PA=$((PA+1)) ;;
+            esac
+            TAG="v$MA.$MI.$PA"
+          fi
+          VERSION="${TAG#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag $TAG is not vMAJOR.MINOR.PATCH"; exit 1
+          fi
+          # Must keep growing so Android accepts the update (sideloaded builds used 1-8).
+          CODE=$((100 + GITHUB_RUN_NUMBER))
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "Releasing $TAG (versionCode $CODE)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check config and signing secrets
+        env:
+          KS: ${{ secrets.PL_KEYSTORE_BASE64 }}
+        run: |
+          missing=0
+          for v in NEXT_PUBLIC_FIREBASE_API_KEY NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN NEXT_PUBLIC_FIREBASE_PROJECT_ID NEXT_PUBLIC_FIREBASE_APP_ID; do
+            [ -n "${!v}" ] || { echo "::error::Repository variable $v is not set"; missing=1; }
+          done
+          [ -n "$KS" ] || { echo "::error::Secret PL_KEYSTORE_BASE64 is not set"; missing=1; }
+          exit $missing
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint && pnpm typecheck && pnpm test
+
+      - name: Production env for the static export
+        run: |
+          cat > .env.production <<ENV
+          NEXT_PUBLIC_FIREBASE_API_KEY=$NEXT_PUBLIC_FIREBASE_API_KEY
+          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=$NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID=$NEXT_PUBLIC_FIREBASE_PROJECT_ID
+          NEXT_PUBLIC_FIREBASE_APP_ID=$NEXT_PUBLIC_FIREBASE_APP_ID
+          NEXT_PUBLIC_USE_EMULATORS=false
+          NEXT_PUBLIC_GOOGLE_SIGN_IN=false
+          ENV
+
+      - name: Build web bundle and sync Capacitor
+        run: pnpm build:native:prod
+
+      - name: Restore signing key
+        env:
+          KS: ${{ secrets.PL_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KS" | base64 -d > "$RUNNER_TEMP/plot-ledger.keystore"
+          echo "PL_KEYSTORE_PATH=$RUNNER_TEMP/plot-ledger.keystore" >> "$GITHUB_ENV"
+
+      - name: Assemble signed release APK
+        working-directory: android
+        env:
+          PL_KEYSTORE_PASSWORD: ${{ secrets.PL_KEYSTORE_PASSWORD }}
+          PL_KEY_ALIAS: ${{ secrets.PL_KEY_ALIAS }}
+          PL_KEY_PASSWORD: ${{ secrets.PL_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon -PversionCode=${{ steps.version.outputs.code }} -PversionName=${{ steps.version.outputs.version }}
+
+      - name: Verify signature and checksum
+        id: apk
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          cp "$APK" plot-ledger.apk
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n1)
+          "$BT/apksigner" verify --print-certs plot-ledger.apk | tee signer.txt
+          grep -q "CN=Android Debug" signer.txt || echo "::warning::APK signer changed; existing installs won't update in place"
+          echo "sha=$(sha256sum plot-ledger.apk | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          rm -f "$PL_KEYSTORE_PATH"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          SHA: ${{ steps.apk.outputs.sha }}
+        run: |
+          printf 'Android APK for Plot Ledger %s. Open it on the phone to install over the existing app; the app also offers this update on launch.\n\nSHA-256: `%s`\n' "$TAG" "$SHA" > notes.md
+          gh release create "$TAG" plot-ledger.apk \
+            --target "$GITHUB_SHA" \
+            --title "Plot Ledger $TAG" \
+            --notes-file notes.md \
+            --generate-notes \
+            --latest
+
+  firestore-rules:
+    name: Deploy Firestore rules (optional)
+    needs: android
+    runs-on: ubuntu-latest
+    env:
+      FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip when no Firebase credentials are configured
+        if: env.FIREBASE_SA == ''
+        run: echo "No FIREBASE_SERVICE_ACCOUNT secret; rules deploy skipped." >> "$GITHUB_STEP_SUMMARY"
+      - uses: pnpm/action-setup@v4
+        if: env.FIREBASE_SA != ''
+      - uses: actions/setup-node@v4
+        if: env.FIREBASE_SA != ''
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - if: env.FIREBASE_SA != ''
+        run: pnpm install --frozen-lockfile
+      - name: Deploy rules and indexes
+        if: env.FIREBASE_SA != ''
+        env:
+          PROJECT: ${{ vars.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+        run: |
+          echo "$FIREBASE_SA" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          pnpm exec firebase deploy --only firestore:rules,firestore:indexes --project "$PROJECT" --non-interactive
+          rm -f "$RUNNER_TEMP/sa.json"
