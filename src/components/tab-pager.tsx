@@ -155,7 +155,6 @@ export function TabPager({
     let state: "idle" | "pending" | "dragging" | "ignored" = "idle";
     let startX = 0;
     let startY = 0;
-    let lockX = 0;
     let samples: Array<{ x: number; t: number }> = [];
     let suppressClick = false;
 
@@ -187,7 +186,6 @@ export function TabPager({
           return;
         }
         state = "dragging";
-        lockX = dx;
         samples = [];
         settling.current?.stop();
         const current = activeRef.current;
@@ -197,7 +195,8 @@ export function TabPager({
         showOnly([current - 1, current, current + 1]);
       }
       if (event.cancelable) event.preventDefault();
-      const raw = dx - lockX;
+      // 1:1 with the finger from where it first touched
+      const raw = dx;
       drag.set(edgeResist(raw, activeRef.current, COUNT));
       const now = performance.now();
       samples.push({ x: touch.clientX, t: now });

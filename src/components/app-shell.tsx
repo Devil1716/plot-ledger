@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { BookOpenText, LayoutGrid, LogOut, Users } from "lucide-react";
 import { useLedger } from "@/components/ledger-provider";
@@ -23,7 +23,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { profile, isAdmin, signOutUser, people } = useLedger();
   const linked = people.find((person) => person.id === profile?.personId);
-  const active = Math.max(0, tabIndexOf(pathname));
+  const routeIndex = Math.max(0, tabIndexOf(pathname));
+  // Switch tabs immediately on a swipe/tap; the route (and Android back stack) catches up.
+  // In the packaged app a route change can take a few hundred ms on a hot phone.
+  const [pending, setPending] = useState<number | null>(null);
+  const [outstanding, setOutstanding] = useState<number[]>([]);
+  const [lastRoute, setLastRoute] = useState(routeIndex);
+  if (lastRoute !== routeIndex) {
+    setLastRoute(routeIndex);
+    const at = outstanding.indexOf(routeIndex);
+    const rest = at >= 0 ? outstanding.slice(at + 1) : [];
+    setOutstanding(rest);
+    // an earlier swipe's route landing while a newer one is in flight keeps the newer tab;
+    // anything else (arrived, Android back) follows the route
+    if (rest.length === 0 || pending === routeIndex) setPending(null);
+  }
+  const active = pending ?? routeIndex;
 
   // shared by the pager (page offset) and the bottom bar (pill position)
   const drag = useMotionValue(0);
@@ -62,7 +77,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return off;
   }, [drag, placePill]);
 
-  const onNavigate = useCallback((index: number) => router.push(TAB_PATHS[index], { scroll: false }), [router]);
+  const onNavigate = useCallback(
+    (index: number) => {
+      setPending(index);
+      setOutstanding((current) => [...current, index]);
+      router.push(TAB_PATHS[index], { scroll: false });
+    },
+    [router],
+  );
 
   return (
     <MotionConfig reducedMotion="user">
@@ -96,7 +118,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         data-no-swipe
         className="fixed inset-x-0 bottom-[calc(1rem+var(--safe-bottom))] z-40 flex justify-center px-4"
       >
-        <ul className="relative flex items-center gap-1 rounded-full bg-[#0b0f1a] p-1.5 shadow-[0_6px_16px_rgb(0_0_0/0.4)] ring-1 ring-white/10">
+        <ul className="relative isolate flex items-center gap-1 rounded-full bg-[#0b0f1a] p-1.5 shadow-[0_6px_16px_rgb(0_0_0/0.4)] ring-1 ring-white/10">
           <motion.span
             aria-hidden
             className="absolute top-1.5 left-0 h-12 rounded-full bg-white"
@@ -113,11 +135,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   }}
                   href={link.href}
                   scroll={false}
+                  onClick={() => {
+                    if (index === active) return;
+                    setPending(index);
+                    setOutstanding((current) => [...current, index]);
+                  }}
                   data-testid={link.testId}
                   aria-current={isActive ? "page" : undefined}
                   className={cn(
                     "relative flex h-12 min-w-12 items-center justify-center gap-2 rounded-full px-4 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-white",
-                    isActive ? "px-6 text-[#0b0f1a]" : "text-white/70 hover:text-white",
+                    // white content + difference blend: dark wherever the white pill sits under it,
+                    // so icons stay readable while the pill tracks a swipe between tabs
+                    "mix-blend-difference",
+                    isActive ? "px-6 text-white" : "text-white/70 hover:text-white",
                   )}
                 >
                   <motion.span

@@ -31,7 +31,7 @@ export function settleTab(active: number, count: number, drag: number, velocity:
   if (direction === 0) return active;
   const target = active + direction;
   if (target < 0 || target >= count) return active;
-  const far = Math.abs(drag) > width * 0.28;
+  const far = Math.abs(drag) > width * 0.25;
   const flick = Math.abs(velocity) > 0.4 && Math.sign(velocity) === Math.sign(drag) && Math.abs(drag) > 24;
   return far || flick ? target : active;
 }
