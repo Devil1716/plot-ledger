@@ -33,39 +33,31 @@ function dbOf(context: RulesTestContext): Firestore {
   return context.firestore() as unknown as Firestore;
 }
 
+/** A Google sign-in token (the only provider the app offers). */
+function google(email: string, verified = true) {
+  return { email, email_verified: verified, firebase: { sign_in_provider: "google.com" } } as never;
+}
+
 function adminDb(): Firestore {
-  return dbOf(
-    testEnv.authenticatedContext(ADMIN_UID, {
-      email: "admin@plotshare.local",
-      email_verified: true,
-    }),
-  );
+  return dbOf(testEnv.authenticatedContext(ADMIN_UID, google("admin@plotshare.local")));
 }
 
 function memberDb(): Firestore {
-  return dbOf(
-    testEnv.authenticatedContext(MEMBER_UID, {
-      email: "member@plotshare.local",
-      email_verified: false,
-    }),
-  );
+  return dbOf(testEnv.authenticatedContext(MEMBER_UID, google("member@plotshare.local")));
 }
 
 function unlinkedDb(): Firestore {
-  return dbOf(
-    testEnv.authenticatedContext(UNLINKED_UID, {
-      email: "new@plotshare.local",
-      email_verified: true,
-    }),
-  );
+  return dbOf(testEnv.authenticatedContext(UNLINKED_UID, google("new@plotshare.local")));
 }
 
 function verifiedDb(uid: string, email: string): Firestore {
+  return dbOf(testEnv.authenticatedContext(uid, google(email)));
+}
+
+/** Email/password sign-in: the provider still exists on the project, but rules refuse it. */
+function passwordDb(uid: string, email: string): Firestore {
   return dbOf(
-    testEnv.authenticatedContext(uid, {
-      email,
-      email_verified: true,
-    }),
+    testEnv.authenticatedContext(uid, { email, email_verified: true, firebase: { sign_in_provider: "password" } } as never),
   );
 }
 
@@ -386,38 +378,72 @@ describe("roster and linking (admin)", () => {
     await seedLedger();
   });
 
-  it("lets an admin edit a person and blocks creates, deletes, and member edits", async () => {
+  it("lets an admin edit a person (including making them the 0% homeowner), and blocks deletes and member edits", async () => {
     const db = adminDb();
     await assertSucceeds(
       updateDoc(doc(db, "people", "kavita"), {
         name: "Kavita S. Shah",
-        role: "contributor",
+        role: "homeowner",
         color: "#c4a15a",
-        sortOrder: 2,
-        linkedUid: UNLINKED_UID,
-        linkedLabel: "New Person",
-      }),
-    );
-    await assertFails(setDoc(doc(db, "people", "seventh"), {
-      name: "Seventh",
-      role: "contributor",
-      color: "#112233",
-      sortOrder: 6,
-      linkedUid: null,
-      linkedLabel: "",
-    }));
-    await assertFails(deleteDoc(doc(db, "people", "kavita")));
-    await assertFails(updateDoc(doc(memberDb(), "people", "kavita"), { name: "Taken" }));
-    await assertFails(
-      updateDoc(doc(db, "people", "kavita"), {
-        name: "Kavita Shah",
-        role: "contributor",
-        color: "green",
         sortOrder: 2,
         linkedUid: null,
         linkedLabel: "",
       }),
     );
+    await assertFails(deleteDoc(doc(db, "people", "kavita")));
+    await assertFails(updateDoc(doc(memberDb(), "people", "kavita"), { name: "Taken" }));
+    await assertFails(updateDoc(doc(db, "people", "kavita"), { color: "green" }));
+    await assertFails(updateDoc(doc(db, "people", "kavita"), { role: "owner" }));
+  });
+
+  it("lets only an admin add a roster person", async () => {
+    const person = { name: "Seventh", role: "contributor", color: "#112233", sortOrder: 6, linkedUid: null, linkedLabel: "" };
+    await assertSucceeds(setDoc(doc(adminDb(), "people", "seventh"), { ...person, photoURL: "https://lh3.googleusercontent.com/a/x" }));
+    await assertFails(setDoc(doc(memberDb(), "people", "eighth"), person));
+    await assertFails(setDoc(doc(unlinkedDb(), "people", "eighth"), person));
+    await assertFails(setDoc(doc(adminDb(), "people", "bad id!"), person));
+    await assertFails(setDoc(doc(adminDb(), "people", "ninth"), { ...person, linkedUid: "nobody-has-this-uid" }));
+  });
+
+  it("approves a waiting account by creating their roster person from the Google profile in one batch", async () => {
+    await assertFails(getDocs(collection(unlinkedDb(), "payments")));
+    const db = adminDb();
+    const batch = writeBatch(db);
+    batch.set(doc(db, "people", "p-unlinked"), {
+      name: "New Person",
+      role: "contributor",
+      color: "#22aa88",
+      sortOrder: 6,
+      linkedUid: UNLINKED_UID,
+      linkedLabel: "New Person",
+      photoURL: "https://lh3.googleusercontent.com/a/new",
+    });
+    batch.update(doc(db, "users", UNLINKED_UID), { personId: "p-unlinked" });
+    batch.set(doc(collection(db, "audit")), {
+      action: "create",
+      entity: "person",
+      entityId: "p-unlinked",
+      actorUid: ADMIN_UID,
+      actorName: "Ananya Iyer",
+      summary: "Approved New Person",
+      at: serverTimestamp(),
+    });
+    await assertSucceeds(batch.commit());
+    // now a member: reads everything and can pay for themselves only
+    await assertSucceeds(getDocs(collection(unlinkedDb(), "payments")));
+    await assertSucceeds(
+      setDoc(doc(collection(unlinkedDb(), "payments")), paymentPayload({ personId: "p-unlinked", createdBy: UNLINKED_UID, updatedBy: UNLINKED_UID })),
+    );
+    await assertFails(
+      setDoc(doc(collection(unlinkedDb(), "payments")), paymentPayload({ personId: "rohan", createdBy: UNLINKED_UID, updatedBy: UNLINKED_UID })),
+    );
+  });
+
+  it("lets people refresh their own Google name and photo, but nothing else", async () => {
+    const self = memberDb();
+    await assertSucceeds(updateDoc(doc(self, "users", MEMBER_UID), { displayName: "Rohan M.", photoURL: "https://lh3.googleusercontent.com/a/r" }));
+    await assertFails(updateDoc(doc(self, "users", MEMBER_UID), { email: "else@plotshare.local" }));
+    await assertFails(updateDoc(doc(self, "users", MEMBER_UID), { photoURL: 42 }));
   });
 
   it("never lets a member link themselves to a person", async () => {
@@ -503,34 +529,21 @@ describe("accounts and admin bootstrap", () => {
     );
   });
 
-  it("lets the first account claim admin and rejects a bootstrap that names someone else", async () => {
-    const unverified = dbOf(
-      testEnv.authenticatedContext("unverified1", {
-        email: "new@plotshare.local",
-        email_verified: false,
-      }),
-    );
-    await assertSucceeds(
-      setDoc(doc(unverified, "users", "unverified1"), {
-        email: "new@plotshare.local",
-        displayName: "New Member",
-        personId: null,
-        createdAt: serverTimestamp(),
-      }),
-    );
-    await assertSucceeds(
-      setDoc(doc(unverified, "settings", "access"), {
-        adminUids: ["unverified1"],
-        createdAt: serverTimestamp(),
-      }),
-    );
+  it("refuses email/password and unverified accounts: Google sign-in only", async () => {
+    const profile = (email: string) => ({ email, displayName: "Someone", personId: null, createdAt: serverTimestamp() });
+    const password = passwordDb("password-u1", "pw@plotshare.local");
+    await assertFails(setDoc(doc(password, "users", "password-u1"), profile("pw@plotshare.local")));
+    const unverified = dbOf(testEnv.authenticatedContext("unverified1", google("new@plotshare.local", false)));
+    await assertFails(setDoc(doc(unverified, "users", "unverified1"), profile("new@plotshare.local")));
+  });
 
-    await testEnv.clearFirestore();
+  it("allows a one-time admin claim only while no admin exists, naming only yourself", async () => {
     const verified = verifiedDb("verified-user", "verified@plotshare.local");
     await assertSucceeds(
       setDoc(doc(verified, "users", "verified-user"), {
         email: "verified@plotshare.local",
         displayName: "Verified",
+        photoURL: null,
         personId: null,
         createdAt: serverTimestamp(),
       }),
@@ -538,6 +551,27 @@ describe("accounts and admin bootstrap", () => {
     await assertFails(
       setDoc(doc(verified, "settings", "access"), {
         adminUids: [MEMBER_UID],
+        createdAt: serverTimestamp(),
+      }),
+    );
+    // a profile created under password sign-in (legacy) can't claim either
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(dbOf(context), "users", "password-u2"), {
+        email: "pw2@plotshare.local",
+        displayName: "Legacy",
+        personId: null,
+        createdAt: Timestamp.now(),
+      });
+    });
+    await assertFails(
+      setDoc(doc(passwordDb("password-u2", "pw2@plotshare.local"), "settings", "access"), {
+        adminUids: ["password-u2"],
+        createdAt: serverTimestamp(),
+      }),
+    );
+    await assertSucceeds(
+      setDoc(doc(verified, "settings", "access"), {
+        adminUids: ["verified-user"],
         createdAt: serverTimestamp(),
       }),
     );

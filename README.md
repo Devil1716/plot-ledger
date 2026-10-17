@@ -16,14 +16,17 @@ Gestures: swipe left/right anywhere on a page to move between History, Ledger an
 
 Android app (APK): **[latest release](https://github.com/Devil1716/plot-ledger/releases/latest)**. Download the `.apk` from the release assets and open it on your phone (allow installs from your browser when Android asks). iOS builds need a Mac with Xcode; see "Native apps" below.
 
-The Android app checks GitHub for a newer release when it starts and when you switch back to it. If there is one, it shows **Update available**; tap **Update**, then open the downloaded APK. It installs over the existing app and keeps you signed in.
+The Android app keeps itself up to date (it reads `update.json` from the latest release on launch and on resume):
+
+- **Web-only releases** (same `nativeBuild`): the new web bundle (`plot-ledger-web.zip`) downloads in the background, its SHA-256 is checked, and it is applied the next time the app starts ([@capgo/capacitor-updater](https://github.com/Cap-go/capacitor-updater), MPL-2.0, self-hosted: no Capgo cloud, no stats). If the new bundle doesn't boot (it never calls `notifyAppReady()` within 10 s), the app rolls back to the previous one.
+- **Native releases** (higher `nativeBuild`): the APK downloads inside the app with a progress bar, is checksum-verified, and Android's installer opens. Android always asks you to tap **Install** for apps that don't come from a store; the first time it also asks you to allow "Install unknown apps" for Plot Ledger. You stay signed in.
 
 ## Releasing an update (CI/CD)
 
 GitHub Actions does the building (`.github/workflows/`):
 
 - **CI** (`ci.yml`) runs on every push to `main` and on every pull request: lint, typecheck, unit tests, security-rules tests and the Playwright end-to-end test (both against the Firebase emulators).
-- **Release** (`release.yml`) builds the production Android APK, signs it with the same key as the current installs, and publishes a GitHub release with `plot-ledger.apk` attached. Phones then get the update prompt.
+- **Release** (`release.yml`) builds the production Android APK, signs it with the same key as the current installs, zips the web bundle, and publishes a GitHub release with `plot-ledger.apk`, `plot-ledger-web.zip` and `update.json`. The APK's versionCode is `nativeBuild` from `package.json`: **bump `nativeBuild` whenever anything under `android/` or a native plugin changes**; leave it alone for web-only changes so they ship over the air.
 
 Start a release in either of two ways:
 
@@ -72,18 +75,21 @@ pnpm dev
 
 Open [http://127.0.0.1:43123](http://127.0.0.1:43123).
 
-Emulator demo accounts (not production credentials):
-
-| Role | Email | Password |
-| --- | --- | --- |
-| Admin, linked to Ananya Iyer | admin@plotshare.local | plot-admin-2026 |
-| Member, linked to Rohan Mehta | member@plotshare.local | plot-member-2026 |
+Sign-in is **Google only**. Against the emulators the login page also shows test buttons that sign in as fake Google accounts (the Auth emulator accepts unsigned Google ID tokens): Ananya (admin, linked), Rohan (member, linked) and Neha (new, waiting for approval). They never appear in production builds.
 
 `pnpm seed` resets the emulators without sample payments. `pnpm seed:demo` loads a full ₹1.20 crore example where Kavita Shah owns 25%. The seed script refuses any project id that does not start with `demo-`.
 
 Auth emulator: [http://127.0.0.1:9199](http://127.0.0.1:9199). Firestore emulator: `127.0.0.1:8180`. Emulator UI: [http://127.0.0.1:4040](http://127.0.0.1:4040).
 
-Email/password and Google sign-in both use Firebase Auth. On the emulators, Google opens the emulator account picker instead of a real Google account. Sessions use browser local persistence.
+On the web "Continue with Google" uses a popup; in the Android/iOS app it uses the native Google account picker ([@capacitor-firebase/authentication](https://github.com/capawesome-team/capacitor-firebase), `skipNativeAuth`), and the resulting ID token signs in the Firebase JS SDK. The member's Google name and photo are their profile. Sessions persist until sign-out.
+
+### Joining the group
+
+1. A new member signs in with Google and lands on **Waiting for approval**.
+2. The admin opens **People → Waiting for approval** and approves them, either as a new roster person (Google name + photo, contributor or homeowner with 0%) or linked to an existing unlinked person.
+3. Their screen opens the ledger by itself. They can record only their own payments and see everyone's.
+
+**First admin:** while the project has no admin (`settings/access` missing), the waiting screen offers a one-time **Claim admin** button; the rules allow exactly one verified Google account to create the admin list, and only while none exists. Claim it right after the first deploy. The admin then approves themself like anyone else to record payments.
 
 ## Tests
 
@@ -92,21 +98,21 @@ pnpm lint
 pnpm exec tsc --noEmit
 pnpm test          # share math, formatting, rounding
 pnpm test:rules    # Firestore rules against the emulator
-pnpm test:e2e      # Playwright: own-only payments, unlinked sign-up, swipe tabs + pull to pay
+pnpm test:e2e      # Playwright: own-only payments, waiting → approval, swipe tabs + pull to pay
 ```
 
 Rules and end-to-end tests start the emulators themselves. Java must be on `PATH`.
 
 ## Security rules
 
-`firestore.rules` is the source of truth for who can do what. An account is *linked* when `users/{uid}.personId` names a person whose `linkedUid` is that uid (both directions). Linked accounts and admins can read people, payments and the audit trail; unlinked accounts cannot. A payment can only be created with `personId` equal to your own linked person and `createdBy` equal to you, with a positive whole-paise amount (max ₹10 Cr) and a sane date; edits and deletes are limited to the creator for 24 hours, and every payment write must carry a matching audit entry in the same batch. Admins (`settings/access.adminUids`) manage the roster, links and admin list, but get no extra payment powers. The first account can create that admin list if it does not exist yet; later admins can add others but cannot remove themselves in the same write. User emails are readable by that user and by admins, not by every member. Nothing is world-readable. Review `firestore.rules` before you point this at a real project.
+`firestore.rules` is the source of truth for who can do what. Only Google accounts with a verified email are accepted. An account is *linked* when `users/{uid}.personId` names a person whose `linkedUid` is that uid (both directions). Linked accounts and admins can read people, payments and the audit trail; unlinked accounts cannot. A payment can only be created with `personId` equal to your own linked person and `createdBy` equal to you, with a positive whole-paise amount (max ₹10 Cr) and a sane date; edits and deletes are limited to the creator for 24 hours, and every payment write must carry a matching audit entry in the same batch. Admins (`settings/access.adminUids`) manage the roster, links and admin list, but get no extra payment powers. The first verified Google account can create that admin list (naming only itself) if it does not exist yet; later admins can add others but cannot remove themselves in the same write. User emails are readable by that user and by admins, not by every member. Nothing is world-readable. Review `firestore.rules` before you point this at a real project.
 
 ## Plug in a real Firebase project
 
 This repository does not create or deploy a Firebase project.
 
 1. Create a project in the [Firebase console](https://console.firebase.google.com/) and upgrade it to the Blaze plan if you want App Hosting.
-2. Enable Authentication → Email/Password and Google. Add your domain under Authorized domains (`localhost` has no port).
+2. Enable Authentication → Google (the only provider the rules accept). Add your domain under Authorized domains (`localhost` has no port). For the Android app, add the signing key's SHA-1/SHA-256 to the Android app in Project settings and put its `google-services.json` in `android/app/`.
 3. Create a Firestore database and register a web app.
 4. Put the web config in `.env.local` and set `NEXT_PUBLIC_USE_EMULATORS=false`.
 5. Replace `demo-plot-ledger` in `.firebaserc` with the real project id.
@@ -154,7 +160,7 @@ Inside the Android emulator, `127.0.0.1` is the phone itself, so the app rewrite
 
 ### Production Firebase project
 
-The released APK talks to the real Firebase project **`plot-ledger-ss1017`** (Spark plan, Firestore in `asia-south1`, Email/Password sign-in). Its public web config is in `.env.production.example`; copy it to `.env.production` and run `pnpm android:apk:prod` to rebuild the APK against it (`CAP_USE_EMULATORS=false`: HTTPS only, no emulator hints, no Google button). Accounts are created by the project owner; credentials are never stored in this repository.
+The released APK talks to the real Firebase project **`plot-ledger-ss1017`** (Spark plan, Firestore in `asia-south1`, Google sign-in). Its public web config is in `.env.production.example` and the Android Firebase config in `android/app/google-services.json` (public client config, not a secret); copy the former to `.env.production` and run `pnpm android:apk:prod` to rebuild the APK against it (`CAP_USE_EMULATORS=false`: HTTPS only, no emulator buttons). No passwords or service accounts are stored in this repository.
 
 ### Real phones need a real Firebase project
 

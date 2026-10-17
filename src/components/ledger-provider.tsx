@@ -8,16 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  createUserWithEmailAndPassword,
-  GoogleAuthProvider,
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  signInWithPopup,
-  signOut,
-  updateProfile,
-  type User,
-} from "firebase/auth";
+import { onAuthStateChanged, type User } from "firebase/auth";
 import { collection, doc, onSnapshot, type Timestamp } from "firebase/firestore";
 import { firebaseReady } from "@/lib/firebase";
 import { computeShares, type ShareRow } from "@/lib/ledger-math";
@@ -31,7 +22,8 @@ import {
   type PersonRecord,
   type UserRecord,
 } from "@/lib/records";
-import { ensureProfile, queueProfileName, tryBootstrapAdmin } from "@/lib/session";
+import { claimAdmin, ensureProfile } from "@/lib/session";
+import { signInWithFakeGoogle, signInWithGoogle, signOutEverywhere } from "@/lib/google-sign-in";
 
 interface LedgerContextValue {
   status: "loading" | "signed-out" | "ready" | "error";
@@ -42,8 +34,10 @@ interface LedgerContextValue {
   isAdmin: boolean;
   /** Roster person linked to this account (both ways), or null. Payments can only be made for this person. */
   myPersonId: string | null;
-  /** Signed in, but no admin has linked this account to a roster person yet. */
+  /** Signed in, but no admin has approved (linked) this account yet. */
   needsLink: boolean;
+  /** No admin exists yet: the one-time "claim admin" is open. */
+  noAdminYet: boolean;
   adminUids: string[];
   accessCreatedAt: Timestamp | null;
   people: PersonRecord[];
@@ -51,9 +45,10 @@ interface LedgerContextValue {
   audit: AuditRecord[];
   accounts: UserRecord[];
   shares: ShareRow[];
-  signInEmail: (email: string, password: string) => Promise<void>;
-  signUpEmail: (email: string, password: string, name: string) => Promise<void>;
   signInGoogle: () => Promise<void>;
+  /** Emulator-only test sign-in (see signInWithFakeGoogle). */
+  signInTestAccount: (account: { sub: string; email: string; name: string }) => Promise<void>;
+  claimAdmin: () => Promise<void>;
   signOutUser: () => Promise<void>;
 }
 
@@ -68,7 +63,9 @@ function errorMessage(error: unknown): string {
     if (code.includes("email-already-in-use")) return "An account with that email already exists. Sign in instead.";
     if (code.includes("weak-password")) return "Use at least 6 characters.";
     if (code.includes("invalid-email")) return "Enter a valid email address.";
-    if (code.includes("popup-closed")) return "Google sign-in was closed before it finished.";
+    if (code.includes("popup-closed") || code.includes("cancelled-popup")) return "Google sign-in was closed before it finished.";
+    if (code.includes("popup-blocked")) return "The browser blocked the Google window. Allow pop-ups and try again.";
+    if (code.includes("account-exists-with-different-credential")) return "This email already uses another sign-in method.";
     if (code.includes("permission-denied")) return "You don't have permission to change the ledger.";
     if (code.includes("too-many-requests")) return "Too many attempts. Wait a minute and try again.";
     if (code.includes("user-disabled")) return "This account has been turned off. Ask an admin.";
@@ -133,7 +130,6 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
           void (async () => {
             try {
               await ensureProfile(db, nextUser);
-              await tryBootstrapAdmin(db, nextUser);
               if (current !== generation) return;
               setUser(nextUser);
               setError(null);
@@ -198,6 +194,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   const linkedPersonId = profile?.personId ?? null;
   const canRead = status === "ready" && profileLoaded && accessLoaded && (linkedPersonId !== null || isAdmin);
   const needsLink = status === "ready" && profileLoaded && accessLoaded && linkedPersonId === null && !isAdmin;
+  const noAdminYet = status === "ready" && accessLoaded && adminUids.length === 0;
 
   useEffect(() => {
     if (!canRead || !uid) return;
@@ -310,6 +307,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       isAdmin,
       myPersonId,
       needsLink,
+      noAdminYet,
       adminUids,
       accessCreatedAt,
       people,
@@ -317,29 +315,22 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       audit,
       accounts,
       shares,
-      signInEmail: async (email, password) => {
-        const { auth } = await firebaseReady();
-        await signInWithEmailAndPassword(auth, email.trim(), password);
-      },
-      signUpEmail: async (email, password, name) => {
-        const trimmed = name.trim();
-        queueProfileName(trimmed);
-        try {
-          const { auth } = await firebaseReady();
-          const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-          if (trimmed) await updateProfile(credential.user, { displayName: trimmed.slice(0, 80) });
-        } catch (error) {
-          queueProfileName("");
-          throw error;
-        }
-      },
       signInGoogle: async () => {
         const { auth } = await firebaseReady();
-        await signInWithPopup(auth, new GoogleAuthProvider());
+        await signInWithGoogle(auth);
+      },
+      signInTestAccount: async (account) => {
+        const { auth } = await firebaseReady();
+        await signInWithFakeGoogle(auth, account);
+      },
+      claimAdmin: async () => {
+        const { auth, db } = await firebaseReady();
+        if (!auth.currentUser) throw new Error("Sign in first.");
+        await claimAdmin(db, auth.currentUser);
       },
       signOutUser: async () => {
         const { auth } = await firebaseReady();
-        await signOut(auth);
+        await signOutEverywhere(auth);
       },
     }),
     [
@@ -352,6 +343,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       isAdmin,
       myPersonId,
       needsLink,
+      noAdminYet,
       payments,
       people,
       profile,

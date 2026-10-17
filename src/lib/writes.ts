@@ -238,3 +238,76 @@ export async function updateAdmins(
   batch.set(trail.ref, trail.data);
   await batch.commit();
 }
+
+const PALETTE = ["#7AA7F5", "#F29A85", "#EBC06C", "#A996F2", "#E38DB4", "#6FD3B8", "#F5B26B", "#8FC1E3", "#C9A0DC", "#9ED98B"];
+
+/** Roster id for a person created from an account: stable, rule-safe ([A-Za-z0-9_-]). */
+export function personIdForAccount(uid: string): string {
+  return `p-${uid.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 30)}`;
+}
+
+export type Approval =
+  | { mode: "new"; role: PersonRole }
+  | { mode: "link"; personId: string };
+
+/**
+ * Admin approves a waiting Google account: either adds them to the roster as a new person
+ * (name + photo from their Google profile) or links them to an existing unlinked person.
+ * Money is never touched here.
+ */
+export async function approveAccount(
+  db: Firestore,
+  actor: Actor,
+  people: PersonRecord[],
+  accounts: UserRecord[],
+  account: UserRecord,
+  approval: Approval,
+): Promise<string> {
+  if (account.personId) throw new Error(`${account.displayName} is already approved.`);
+  if (approval.mode === "link") {
+    const person = people.find((item) => item.id === approval.personId);
+    if (!person) throw new Error("That person is not on the roster.");
+    if (person.linkedUid) throw new Error(`${person.name} is already linked to someone.`);
+    await savePerson(db, actor, people, accounts, {
+      personId: person.id,
+      name: person.name,
+      role: person.role,
+      linkedUid: account.uid,
+    });
+    return person.id;
+  }
+
+  const personId = personIdForAccount(account.uid);
+  if (people.some((item) => item.id === personId)) throw new Error("This account already has a roster entry.");
+  const sortOrder = Math.min(50, people.reduce((max, item) => Math.max(max, item.sortOrder + 1), 0));
+  const used = new Set(people.map((item) => item.color.toLowerCase()));
+  const color = PALETTE.find((item) => !used.has(item.toLowerCase())) ?? PALETTE[people.length % PALETTE.length];
+  const name = clip(account.displayName, 80) || "Member";
+
+  const batch = writeBatch(db);
+  // one homeowner at a time: approving someone as homeowner makes the previous one a contributor
+  if (approval.role === "homeowner") {
+    for (const other of people.filter((item) => item.role === "homeowner")) {
+      batch.update(doc(db, "people", other.id), { role: "contributor" });
+    }
+  }
+  batch.set(doc(db, "people", personId), {
+    name,
+    role: approval.role,
+    color,
+    sortOrder,
+    linkedUid: account.uid,
+    linkedLabel: name,
+    ...(account.photoURL ? { photoURL: account.photoURL.slice(0, 2048) } : {}),
+  });
+  batch.update(doc(db, "users", account.uid), { personId });
+  const trail = audit(db, actor, {
+    action: "create",
+    entity: "person",
+    entityId: personId,
+    summary: `Approved ${name} and added them to the roster as ${approval.role === "homeowner" ? "the homeowner (0% share)" : "a contributor"}`,
+  });
+  batch.set(trail.ref, trail.data);
+  await batch.commit();
+  return personId;
+}

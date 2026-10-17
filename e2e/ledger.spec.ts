@@ -1,14 +1,17 @@
 import { expect, test, type Page } from "@playwright/test";
-import { DEMO_ADMIN_EMAIL, DEMO_ADMIN_PASSWORD, DEMO_MEMBER_EMAIL, DEMO_MEMBER_PASSWORD } from "../src/lib/roster";
+const ADMIN = "Ananya (admin)";
+const MEMBER = "Rohan (member)";
+const NEWCOMER = "Neha (new, not approved)";
 
-async function signIn(page: Page, email: string, password: string) {
+/** Google is the only sign-in; against the emulators the login page offers fake Google accounts. */
+async function signIn(page: Page, account: string, expectLedger = true) {
   await page.goto("/login");
   await expect(page.getByRole("button", { name: "Continue with Google" })).toBeVisible();
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByLabel("Email")).toHaveCount(0);
+  await expect(page.getByLabel("Password")).toHaveCount(0);
+  await page.getByRole("button", { name: account }).click();
   await expect(page.getByRole("heading", { name: "Who owns how much of the plot" })).toHaveCount(0);
-  await expect(page.getByTestId("collected-total")).toBeVisible();
+  if (expectLedger) await expect(page.getByTestId("collected-total")).toBeVisible();
 }
 
 /** Records a payment for the signed-in person: there is no "who paid" picker any more. */
@@ -37,7 +40,7 @@ async function payForMyself(page: Page, firstName: string, amount: string, date:
 test("everyone pays only for themselves and sees everyone's shares", async ({ browser }) => {
   const adminContext = await browser.newContext();
   const adminPage = await adminContext.newPage();
-  await signIn(adminPage, DEMO_ADMIN_EMAIL, DEMO_ADMIN_PASSWORD);
+  await signIn(adminPage, ADMIN);
   await expect(adminPage.getByTestId("share-ananya")).toContainText("0.00%");
 
   // the admin is linked to Ananya and can only record Ananya's money
@@ -48,7 +51,7 @@ test("everyone pays only for themselves and sees everyone's shares", async ({ br
 
   const memberContext = await browser.newContext();
   const memberPage = await memberContext.newPage();
-  await signIn(memberPage, DEMO_MEMBER_EMAIL, DEMO_MEMBER_PASSWORD);
+  await signIn(memberPage, MEMBER);
   await expect(memberPage.getByTestId("share-ananya")).toContainText("100.00%");
   await payForMyself(memberPage, "Rohan", "75,00,000", "2026-05-02", "Rest of the contributor pool");
   await expect(memberPage.getByTestId("share-rohan")).toContainText("75.00%");
@@ -77,18 +80,36 @@ test("everyone pays only for themselves and sees everyone's shares", async ({ br
   await adminContext.close();
 });
 
-test("a new account can't see the ledger until the admin links it", async ({ page }) => {
-  await page.goto("/login");
-  await page.getByRole("button", { name: "Need an account? Create one" }).click();
-  await page.getByLabel("Name").fill("Newcomer");
-  await page.getByLabel("Email").fill(`new-${Date.now()}@plotshare.local`);
-  await page.getByLabel("Password").fill("newcomer-pass-123");
-  await page.getByRole("button", { name: "Create account" }).click();
+test("a new Google account waits until the admin approves it", async ({ browser }) => {
+  const newContext = await browser.newContext();
+  const page = await newContext.newPage();
+  await signIn(page, NEWCOMER, false);
   await expect(page.getByTestId("needs-link")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Ask the admin to link your account" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Waiting for approval" })).toBeVisible();
+  await expect(page.getByTestId("needs-link")).toContainText("newcomer@plotshare.local");
+  // an admin already exists, so there is no claim button
+  await expect(page.getByTestId("claim-admin")).toHaveCount(0);
   await expect(page.getByTestId("collected-total")).toHaveCount(0);
+
+  const adminContext = await browser.newContext();
+  const adminPage = await adminContext.newPage();
+  await signIn(adminPage, ADMIN);
+  await adminPage.getByTestId("nav-people").click();
+  const pending = adminPage.getByTestId("pending-approvals");
+  await expect(pending).toContainText("Neha Newcomer");
+  await pending.getByRole("button", { name: "Approve" }).click();
+  await expect(adminPage.getByTestId("pending-approvals")).toHaveCount(0);
+
+  // the newcomer's screen opens the ledger by itself and she can pay only as herself
+  await expect(page.getByTestId("collected-total")).toBeVisible();
+  await page.getByTestId("add-payment").click();
+  await expect(page.getByTestId("pay-flow").getByTestId("pay-as")).toContainText("You (Neha)");
+  await page.getByTestId("pay-flow").getByTestId("pay-close").click();
+
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/login\/?$/);
+  await adminContext.close();
+  await newContext.close();
 });
 
 /** Dispatches a one-finger touch drag (Chromium supports Touch objects with hasTouch). */
@@ -124,7 +145,7 @@ async function touchDrag(page: Page, from: { x: number; y: number }, to: { x: nu
 test("swipe between tabs and pull down to pay", async ({ browser }) => {
   const context = await browser.newContext({ hasTouch: true, viewport: { width: 412, height: 900 } });
   const page = await context.newPage();
-  await signIn(page, DEMO_MEMBER_EMAIL, DEMO_MEMBER_PASSWORD);
+  await signIn(page, MEMBER);
 
   // swipe left on the ledger → People; swipe right twice → History
   await touchDrag(page, { x: 330, y: 420 }, { x: 60, y: 430 });
@@ -145,6 +166,8 @@ test("swipe between tabs and pull down to pay", async ({ browser }) => {
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByTestId("collected-total")).toBeVisible();
 
+  // a peeking "Payments" handle advertises the pull (first launches say "Pull down to pay")
+  await expect(page.getByTestId("pull-handle")).toContainText("Pull down to pay");
   // pull down from the top of the ledger opens the pay flow
   await page.evaluate(() => window.scrollTo(0, 0));
   await touchDrag(page, { x: 200, y: 250 }, { x: 205, y: 560 }, 16);

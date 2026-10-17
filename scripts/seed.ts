@@ -4,10 +4,10 @@ import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { formatInrFromPaise, formatLedgerDate } from "../src/lib/ledger-math";
 import {
   DEMO_ADMIN_EMAIL,
-  DEMO_ADMIN_PASSWORD,
+  DEMO_ADMIN_GOOGLE_SUB,
   DEMO_ADMIN_UID,
   DEMO_MEMBER_EMAIL,
-  DEMO_MEMBER_PASSWORD,
+  DEMO_MEMBER_GOOGLE_SUB,
   DEMO_MEMBER_UID,
   DEMO_PROJECT_ID,
   ROSTER,
@@ -97,20 +97,25 @@ export async function seedEmulator(options: { withSamplePayments: boolean }): Pr
   const auth = getAuth(app);
   const db = getFirestore(app);
 
-  await auth.createUser({
-    uid: DEMO_ADMIN_UID,
-    email: DEMO_ADMIN_EMAIL,
-    password: DEMO_ADMIN_PASSWORD,
-    emailVerified: true,
-    displayName: "Ananya Iyer",
-  });
-  await auth.createUser({
-    uid: DEMO_MEMBER_UID,
-    email: DEMO_MEMBER_EMAIL,
-    password: DEMO_MEMBER_PASSWORD,
-    emailVerified: true,
-    displayName: "Rohan Mehta",
-  });
+  // Google-provider users (the app is Google sign-in only). The app's emulator test
+  // buttons sign in with an unsigned Google ID token whose `sub` matches these.
+  const imported = await auth.importUsers([
+    {
+      uid: DEMO_ADMIN_UID,
+      email: DEMO_ADMIN_EMAIL,
+      emailVerified: true,
+      displayName: "Ananya Iyer",
+      providerData: [{ uid: DEMO_ADMIN_GOOGLE_SUB, providerId: "google.com", email: DEMO_ADMIN_EMAIL, displayName: "Ananya Iyer" }],
+    },
+    {
+      uid: DEMO_MEMBER_UID,
+      email: DEMO_MEMBER_EMAIL,
+      emailVerified: true,
+      displayName: "Rohan Mehta",
+      providerData: [{ uid: DEMO_MEMBER_GOOGLE_SUB, providerId: "google.com", email: DEMO_MEMBER_EMAIL, displayName: "Rohan Mehta" }],
+    },
+  ]);
+  if (imported.failureCount > 0) throw new Error(`Could not import demo users: ${imported.errors.map((e) => e.error.message).join("; ")}`);
 
   const createdAt = Timestamp.fromDate(new Date("2026-01-01T12:00:00Z"));
   const batch = db.batch();
@@ -179,8 +184,8 @@ if (isDirect) {
   seedEmulator({ withSamplePayments: process.argv.includes("--with-payments") })
     .then(() => {
       console.log("Seeded the local Firebase emulators.");
-      console.log(`Admin  ${DEMO_ADMIN_EMAIL}  ${DEMO_ADMIN_PASSWORD}`);
-      console.log(`Member ${DEMO_MEMBER_EMAIL}  ${DEMO_MEMBER_PASSWORD}`);
+      console.log(`Admin  ${DEMO_ADMIN_EMAIL} (emulator Google test button)`);
+      console.log(`Member ${DEMO_MEMBER_EMAIL} (emulator Google test button)`);
     })
     .catch((error: unknown) => {
       console.error(error);

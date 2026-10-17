@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { BookOpenText, LayoutGrid, LogOut, Users } from "lucide-react";
+import { Avatar } from "@/components/avatar";
 import { useLedger } from "@/components/ledger-provider";
 import { TabPager } from "@/components/tab-pager";
 import { cn } from "cn";
@@ -91,7 +92,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="app-dark min-h-full text-white">
       <div aria-hidden className="status-scrim" />
       <header className="mx-auto flex w-full max-w-6xl items-center gap-3 px-5 pt-[calc(1.25rem+var(--safe-top))] pb-2">
-        <Image src="/logo-mark.png" alt="Plot Ledger" width={44} height={44} unoptimized priority className="size-11 shrink-0" />
+        {profile?.photoURL ? (
+          <Avatar name={profile.displayName} photoURL={profile.photoURL} className="size-11 ring-2 ring-white/15" />
+        ) : (
+          <Image src="/logo-mark.png" alt="Plot Ledger" width={44} height={44} unoptimized priority className="size-11 shrink-0" />
+        )}
         <div className="min-w-0">
           <p className="truncate text-sm leading-tight font-medium">{profile?.displayName ?? "Signed in"}</p>
           <p className="truncate text-xs text-white/65">

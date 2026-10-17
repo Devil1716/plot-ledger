@@ -9,6 +9,8 @@ export interface PersonRecord {
   sortOrder: number;
   linkedUid: string | null;
   linkedLabel: string;
+  /** Google profile photo copied when the admin approved this person (may be empty). */
+  photoURL: string;
 }
 
 export interface PaymentRecord {
@@ -37,6 +39,7 @@ export interface UserRecord {
   uid: string;
   email: string;
   displayName: string;
+  photoURL: string;
   personId: string | null;
 }
 
@@ -86,6 +89,7 @@ export function parsePerson(id: string, data: DocumentData | undefined): PersonR
     sortOrder: data.sortOrder,
     linkedUid: typeof data.linkedUid === "string" ? data.linkedUid : null,
     linkedLabel: typeof data.linkedLabel === "string" ? data.linkedLabel : "",
+    photoURL: typeof data.photoURL === "string" ? data.photoURL : "",
   };
 }
 
@@ -131,6 +135,7 @@ export function parseUser(uid: string, data: DocumentData | undefined): UserReco
     uid,
     email: data.email,
     displayName: data.displayName,
+    photoURL: typeof data.photoURL === "string" ? data.photoURL : "",
     personId: typeof data.personId === "string" ? data.personId : null,
   };
 }

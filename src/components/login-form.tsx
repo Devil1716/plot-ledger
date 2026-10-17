@@ -1,46 +1,32 @@
 "use client";
 
 import { MotionConfig, motion } from "motion/react";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { authErrorMessage, useLedger } from "@/components/ledger-provider";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { usingEmulators } from "@/lib/firebase";
-import { isNativeApp } from "@/lib/native";
-import { DEMO_ADMIN_EMAIL, DEMO_ADMIN_PASSWORD, DEMO_MEMBER_EMAIL, DEMO_MEMBER_PASSWORD } from "@/lib/roster";
+import { TEST_ACCOUNTS } from "@/lib/roster";
 
 export function LoginForm() {
   const router = useRouter();
-  const { status, signInEmail, signUpEmail, signInGoogle } = useLedger();
-  const [mode, setMode] = useState<"sign-in" | "create">("sign-in");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const { status, signInGoogle, signInTestAccount } = useLedger();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
   const emulators = usingEmulators();
-  // Google popup sign-in can't run inside the iOS/Android WebView, and a real
-  // project only offers it once the provider is enabled (NEXT_PUBLIC_GOOGLE_SIGN_IN).
-  const native = useSyncExternalStore(noopSubscribe, isNativeApp, () => false);
-  const showGoogle = !native && process.env.NEXT_PUBLIC_GOOGLE_SIGN_IN !== "false";
 
   useEffect(() => {
     if (status === "ready") router.replace("/");
   }, [router, status]);
 
-  async function onSubmit(event: React.FormEvent) {
-    event.preventDefault();
+  async function run(action: () => Promise<void>) {
     setBusy(true);
     setError(null);
     try {
-      if (mode === "create") await signUpEmail(email, password, name);
-      else await signInEmail(email, password);
-    } catch (submitError) {
-      setError(authErrorMessage(submitError));
+      await action();
+    } catch (signInError) {
+      setError(authErrorMessage(signInError));
     } finally {
       setBusy(false);
     }
@@ -48,7 +34,7 @@ export function LoginForm() {
 
   if (status === "loading" || status === "ready") {
     return (
-      <div className="grid min-h-screen place-items-center">
+      <div className="app-dark grid min-h-screen place-items-center text-white">
         <p className="font-heading text-2xl">Opening the ledger…</p>
       </div>
     );
@@ -74,106 +60,57 @@ export function LoginForm() {
           The homeowner&apos;s money is recorded, and their share stays at zero.
         </p>
       </motion.section>
-      <motion.form onSubmit={(event) => void onSubmit(event)} className="sheet relative grid gap-4 rounded-[2rem] p-6" initial={{ opacity: 0, y: 120, scale: 0.9, rotate: -2 }} animate={{ opacity: 1, y: 0, scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 140, damping: 14, delay: 0.15 }}>
+      <motion.div className="sheet relative grid gap-4 rounded-[2rem] p-6" initial={{ opacity: 0, y: 120, scale: 0.9, rotate: -2 }} animate={{ opacity: 1, y: 0, scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 140, damping: 14, delay: 0.15 }}>
         <div>
-          <h2 className="font-heading text-2xl">{mode === "create" ? "Create an account" : "Sign in"}</h2>
-          <p className="text-muted-foreground mt-1 text-sm">You stay signed in on this device until you sign out.</p>
-        </div>
-        {mode === "create" ? (
-          <div className="grid gap-1.5">
-            <Label htmlFor="name">Name</Label>
-            <Input id="name" value={name} onChange={(event) => setName(event.target.value)} className="h-12 text-base" autoComplete="name" enterKeyHint="next" required />
-          </div>
-        ) : null}
-        <div className="grid gap-1.5">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            inputMode="email"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            enterKeyHint="next"
-            autoComplete="username"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            className="h-12 text-base"
-            required
-          />
-        </div>
-        <div className="relative grid gap-1.5">
-          <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
-            type={showPassword ? "text" : "password"}
-            enterKeyHint="go"
-            autoComplete={mode === "create" ? "new-password" : "current-password"}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            className="h-12 pr-16 text-base"
-            required
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword((value) => !value)}
-            aria-pressed={showPassword}
-            aria-controls="password"
-            title={showPassword ? "Hide what you typed" : "Show what you typed"}
-            className="absolute right-1 bottom-1 h-10 rounded-lg px-3 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
-          >
-            {showPassword ? "Hide" : "Show"}
-          </button>
+          <h2 className="font-heading text-2xl">Sign in</h2>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Use your Google account. New members wait until the admin approves them.
+          </p>
         </div>
         {error ? (
           <p role="alert" className="text-destructive rounded-lg bg-red-50 px-3 py-2 text-sm">
             {error}
           </p>
         ) : null}
-        <Button type="submit" className="h-12 text-base" disabled={busy}>
-          {busy ? "Please wait…" : mode === "create" ? "Create account" : "Sign in"}
+        <Button type="button" className="h-12 gap-3 text-base" disabled={busy} onClick={() => void run(signInGoogle)}>
+          <GoogleMark />
+          {busy ? "Opening Google…" : "Continue with Google"}
         </Button>
-        {showGoogle ? (
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11"
-            onClick={() => {
-              setError(null);
-              void signInGoogle().catch((googleError: unknown) => setError(authErrorMessage(googleError)));
-            }}
-          >
-            Continue with Google
-          </Button>
-        ) : null}
-        <button
-          type="button"
-          className="min-h-11 text-sm underline-offset-4 hover:underline"
-          onClick={() => {
-            setMode(mode === "create" ? "sign-in" : "create");
-            setError(null);
-          }}
-        >
-          {mode === "create" ? "Already have an account? Sign in" : "Need an account? Create one"}
-        </button>
+        <p className="text-muted-foreground text-xs">
+          Your Google name and photo are shown to the other members of your group. You stay signed in on this
+          device until you sign out.
+        </p>
         {emulators ? (
-          <div className="bg-secondary rounded-xl p-3 text-xs leading-5">
-            <p className="font-medium">Emulator accounts</p>
-            <p>
-              Admin {DEMO_ADMIN_EMAIL} / {DEMO_ADMIN_PASSWORD}
-            </p>
-            <p>
-              Member {DEMO_MEMBER_EMAIL} / {DEMO_MEMBER_PASSWORD}
-            </p>
+          <div className="bg-secondary grid gap-2 rounded-xl p-3 text-xs leading-5" data-testid="emulator-accounts">
+            <p className="font-medium">Emulator test accounts (local only)</p>
+            {TEST_ACCOUNTS.map((account) => (
+              <Button
+                key={account.sub}
+                type="button"
+                variant="outline"
+                className="h-10 justify-start"
+                disabled={busy}
+                onClick={() => void run(() => signInTestAccount(account))}
+              >
+                {account.label}
+              </Button>
+            ))}
           </div>
         ) : null}
-      </motion.form>
+      </motion.div>
     </div>
     </div>
     </MotionConfig>
   );
 }
 
-function noopSubscribe() {
-  return () => {};
+function GoogleMark() {
+  return (
+    <svg aria-hidden viewBox="0 0 48 48" className="size-5 rounded-full bg-white p-0.5">
+      <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z" />
+      <path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.7c4.3-4 6.9-9.9 6.9-17.1z" />
+      <path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z" />
+      <path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.7c-2.1 1.4-4.8 2.3-8.5 2.3-6.2 0-11.5-4.1-13.4-9.9l-7.9 6.1C6.6 42.6 14.6 48 24 48z" />
+    </svg>
+  );
 }

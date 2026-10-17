@@ -20,7 +20,14 @@ export const ROSTER: readonly RosterPerson[] = [
 export const DEMO_PROJECT_ID = "demo-plot-ledger";
 export const DEMO_ADMIN_EMAIL = "admin@plotshare.local";
 export const DEMO_MEMBER_EMAIL = "member@plotshare.local";
-export const DEMO_ADMIN_PASSWORD = "plot-admin-2026";
-export const DEMO_MEMBER_PASSWORD = "plot-member-2026";
 export const DEMO_ADMIN_UID = "admin-user";
 export const DEMO_MEMBER_UID = "member-user";
+
+/** Emulator-only "Google" accounts (unsigned test tokens; see signInWithFakeGoogle). */
+export const DEMO_ADMIN_GOOGLE_SUB = "demo-admin-google";
+export const DEMO_MEMBER_GOOGLE_SUB = "demo-member-google";
+export const TEST_ACCOUNTS = [
+  { sub: DEMO_ADMIN_GOOGLE_SUB, email: DEMO_ADMIN_EMAIL, name: "Ananya Iyer", label: "Ananya (admin)" },
+  { sub: DEMO_MEMBER_GOOGLE_SUB, email: DEMO_MEMBER_EMAIL, name: "Rohan Mehta", label: "Rohan (member)" },
+  { sub: "demo-newcomer-google", email: "newcomer@plotshare.local", name: "Neha Newcomer", label: "Neha (new, not approved)" },
+] as const;

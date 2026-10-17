@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "55005873807",
+    "project_id": "plot-ledger-ss1017",
+    "storage_bucket": "plot-ledger-ss1017.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:55005873807:android:312dcb93c40069082852fa",
+        "android_client_info": {
+          "package_name": "com.devil1716.plotledger"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "55005873807-n2or65p1le8fqd9u1qgt60a9vg10hk4n.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.devil1716.plotledger",
+            "certificate_hash": "5aeba64ee99db62d44b934f7d5fbdf703da3fb5c"
+          }
+        },
+        {
+          "client_id": "55005873807-invgeqggusa2li1tvafio041hdmhmm7v.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC06DAMhFntsMTEltMylKLCFKUWsf6JWXY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "55005873807-invgeqggusa2li1tvafio041hdmhmm7v.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "55005873807-cqmi8pejgiip21o46jlaers5ts8b212i.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.devil1716.plotledger"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

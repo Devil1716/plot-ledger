@@ -23,6 +23,21 @@ const config: CapacitorConfig = {
     contentInset: "never",
   },
   plugins: {
+    // Native Google account picker; the ID token then signs in the Firebase JS SDK.
+    FirebaseAuthentication: {
+      skipNativeAuth: true,
+      providers: ["google.com"],
+    },
+    // Self-hosted OTA web bundles (no Capgo cloud): the app downloads a zip from the
+    // GitHub release itself (src/lib/app-update.ts). No stats, no auto checks.
+    CapacitorUpdater: {
+      autoUpdate: false,
+      statsUrl: "",
+      appReadyTimeout: 10000,
+      autoDeleteFailed: true,
+      autoDeletePrevious: true,
+      resetWhenUpdate: true,
+    },
     SplashScreen: {
       // the app hides the splash as soon as React paints; auto-hide is a safety net
       launchShowDuration: 3000,

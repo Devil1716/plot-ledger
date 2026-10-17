@@ -3,7 +3,10 @@ name: Release
 # Ship a new Android build:
 #   git tag v1.2.0 && git push origin v1.2.0
 # or Actions > Release > Run workflow (bumps the latest tag by patch/minor/major).
-# The app checks the latest GitHub release on launch and offers the update.
+# Each release publishes plot-ledger.apk, plot-ledger-web.zip (the web bundle) and update.json.
+# The app reads update.json on launch: same native build → the web bundle is applied silently
+# on the next launch (OTA); higher nativeBuild → the APK downloads in the app and Android's
+# installer opens. Bump package.json "nativeBuild" whenever android/ or native plugins change.
 
 on:
   push:
@@ -67,8 +70,12 @@ jobs:
           if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::Tag $TAG is not vMAJOR.MINOR.PATCH"; exit 1
           fi
-          # Must keep growing so Android accepts the update (sideloaded builds used 1-8).
-          CODE=$((100 + GITHUB_RUN_NUMBER))
+          # versionCode = package.json nativeBuild (bumped only for native changes, so the app
+          # can tell OTA-able web releases from ones that need a new APK).
+          CODE=$(node -p "require('./package.json').nativeBuild")
+          if ! [[ "$CODE" =~ ^[0-9]+$ ]] || [ "$CODE" -le 104 ]; then
+            echo "::error::package.json nativeBuild must be an integer above 104 (got $CODE)"; exit 1
+          fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
@@ -112,7 +119,7 @@ jobs:
           NEXT_PUBLIC_FIREBASE_PROJECT_ID=$NEXT_PUBLIC_FIREBASE_PROJECT_ID
           NEXT_PUBLIC_FIREBASE_APP_ID=$NEXT_PUBLIC_FIREBASE_APP_ID
           NEXT_PUBLIC_USE_EMULATORS=false
-          NEXT_PUBLIC_GOOGLE_SIGN_IN=false
+          NEXT_PUBLIC_APP_VERSION=${{ steps.version.outputs.version }}
           ENV
 
       - name: Build web bundle and sync Capacitor
@@ -144,14 +151,39 @@ jobs:
           echo "sha=$(sha256sum plot-ledger.apk | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           rm -f "$PL_KEYSTORE_PATH"
 
+      - name: Package the OTA web bundle and update.json
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          CODE: ${{ steps.version.outputs.code }}
+          APK_SHA: ${{ steps.apk.outputs.sha }}
+        run: |
+          # index.html at the zip root, as @capgo/capacitor-updater expects
+          (cd out && zip -qr -X ../plot-ledger-web.zip .)
+          export BASE="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+          node -e '
+            const fs = require("fs"); const crypto = require("crypto");
+            const sha = (f) => crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex");
+            const e = process.env;
+            const manifest = {
+              version: e.VERSION,
+              nativeBuild: Number(e.CODE),
+              bundle: { url: `${e.BASE}/plot-ledger-web.zip`, sha256: sha("plot-ledger-web.zip"), size: fs.statSync("plot-ledger-web.zip").size },
+              apk: { url: `${e.BASE}/plot-ledger.apk`, sha256: e.APK_SHA, size: fs.statSync("plot-ledger.apk").size },
+              publishedAt: new Date().toISOString(),
+            };
+            fs.writeFileSync("update.json", JSON.stringify(manifest, null, 2) + "\n");
+          ' 
+          cat update.json
+
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
           SHA: ${{ steps.apk.outputs.sha }}
         run: |
-          printf 'Android APK for Plot Ledger %s. Open it on the phone to install over the existing app; the app also offers this update on launch.\n\nSHA-256: `%s`\n' "$TAG" "$SHA" > notes.md
-          gh release create "$TAG" plot-ledger.apk \
+          printf 'Plot Ledger %s.\n\nInstalled apps update themselves: web-only changes apply on the next launch; native changes download in the app and open Android'"'"'s installer.\n\nAPK SHA-256: `%s`\n' "$TAG" "$SHA" > notes.md
+          gh release create "$TAG" plot-ledger.apk plot-ledger-web.zip update.json \
             --target "$GITHUB_SHA" \
             --title "Plot Ledger $TAG" \
             --notes-file notes.md \

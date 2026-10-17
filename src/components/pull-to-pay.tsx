@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { animate, motion, useMotionValue, useTransform } from "motion/react";
-import { IndianRupee } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { animate, motion, useMotionValue, useReducedMotion, useTransform } from "motion/react";
+import { ChevronDown, IndianRupee } from "lucide-react";
 import { haptic } from "@/lib/native";
 import { lockAxis, PULL_THRESHOLD, rubberPull } from "@/lib/swipe";
 
@@ -11,21 +11,55 @@ import { lockAxis, PULL_THRESHOLD, rubberPull } from "@/lib/swipe";
  * (transform only) and a "Pull to pay" badge fills up; releasing past the threshold opens it.
  * Normal scrolling is untouched: it only engages at scrollY 0 on a clearly downward drag.
  */
+const NUDGE_KEY = "plotledger:pull-nudge-launches";
+const NUDGE_LAUNCHES = 3;
+const PREVIEW_H = 168;
+
+/** Counts launches (once per app session) so the nudge only plays on the first few. */
+function useFirstLaunches(): boolean {
+  const [nudge, setNudge] = useState(false);
+  useEffect(() => {
+    try {
+      const counted = sessionStorage.getItem(NUDGE_KEY) === "1";
+      const launches = Number(localStorage.getItem(NUDGE_KEY) || 0);
+      if (!counted) {
+        sessionStorage.setItem(NUDGE_KEY, "1");
+        localStorage.setItem(NUDGE_KEY, String(launches + 1));
+      }
+      const effective = counted ? launches : launches + 1;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reads storage once after mount
+      setNudge(effective <= NUDGE_LAUNCHES);
+    } catch {
+      setNudge(false);
+    }
+  }, []);
+  return nudge;
+}
+
 export function PullToPay({
   enabled,
   onTrigger,
+  payerName,
   children,
 }: {
   enabled: boolean;
   onTrigger: () => void;
+  /** First name shown in the pay-page preview revealed while pulling. */
+  payerName?: string;
   children: React.ReactNode;
 }) {
   const pull = useMotionValue(0);
+  const reduceMotion = useReducedMotion();
+  const firstLaunches = useFirstLaunches();
+  const [nudging, setNudging] = useState(false);
+  const chevronY = useMotionValue(0);
+  // preview of the pay page: slides down from behind the top edge as you pull
+  const previewY = useTransform(pull, (value) => value - PREVIEW_H);
+  const previewOpacity = useTransform(pull, [8, 60], [0, 1]);
+  const previewScale = useTransform(pull, [0, PULL_THRESHOLD, PULL_THRESHOLD + 40], [0.94, 1, 1.02]);
+  const handleOpacity = useTransform(pull, [0, 40], [1, 0]);
   const progress = useTransform(pull, [0, PULL_THRESHOLD], [0, 1], { clamp: true });
-  const hintOpacity = useTransform(pull, [6, 34], [0, 1]);
-  const hintY = useTransform(pull, (value) => value * 0.45 - 30);
   const fillScale = progress;
-  const ringScale = useTransform(pull, [PULL_THRESHOLD - 1, PULL_THRESHOLD, PULL_THRESHOLD + 30], [1, 1.12, 1.18]);
   const pullLabel = useTransform(progress, [0.9, 1], [1, 0]);
   const releaseLabel = useTransform(progress, [0.9, 1], [0, 1]);
   const triggerRef = useRef(onTrigger);
@@ -107,33 +141,89 @@ export function PullToPay({
     };
   }, [enabled, pull]);
 
+  // first launches: a few gentle "tugs" of the content plus a bouncing chevron, then rest
+  useEffect(() => {
+    if (!enabled || !firstLaunches || reduceMotion) return;
+    let stopped = false;
+    const running: Array<ReturnType<typeof animate>> = [];
+    const stop = () => {
+      stopped = true;
+      running.forEach((animation) => animation.stop());
+      setNudging(false);
+      if (pull.get() > 0 && pull.get() < 40) animate(pull, 0, { type: "spring", stiffness: 380, damping: 34 });
+      chevronY.set(0);
+    };
+    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    void (async () => {
+      await wait(900);
+      for (let round = 0; round < 3 && !stopped; round += 1) {
+        setNudging(true);
+        const tug = animate(pull, [0, 30, 0, 12, 0], { duration: 1.1, ease: "easeInOut", times: [0, 0.3, 0.6, 0.8, 1] });
+        const chev = animate(chevronY, [0, 5, 0, 5, 0], { duration: 1.1, ease: "easeInOut" });
+        running.push(tug, chev);
+        await Promise.all([tug, chev]);
+        if (!stopped) await wait(2200);
+      }
+      if (!stopped) setNudging(false);
+    })();
+    window.addEventListener("touchstart", stop, { passive: true, once: true });
+    return () => {
+      window.removeEventListener("touchstart", stop);
+      stop();
+    };
+  }, [enabled, firstLaunches, reduceMotion, pull, chevronY]);
+
   return (
     <div className="relative">
       {enabled ? (
         <motion.div
           aria-hidden
-          data-testid="pull-to-pay-hint"
-          className="pointer-events-none absolute inset-x-0 top-0 flex flex-col items-center gap-1.5"
-          style={{ opacity: hintOpacity, y: hintY }}
+          data-testid="pull-preview"
+          className="pointer-events-none absolute inset-x-4 top-0 z-0 overflow-hidden rounded-3xl bg-white p-4 text-[#0f1524] shadow-[0_10px_30px_rgb(0_0_0/0.35)]"
+          style={{ y: previewY, opacity: previewOpacity, scale: previewScale, height: PREVIEW_H - 16 }}
         >
-          <motion.span
-            className="relative grid size-10 place-items-center overflow-hidden rounded-full ring-2 ring-[var(--mint)]"
-            style={{ scale: ringScale }}
-          >
-            <motion.span className="absolute inset-0 rounded-full bg-[var(--mint)]" style={{ scale: fillScale }} />
-            <IndianRupee className="relative size-4 text-white mix-blend-difference" aria-hidden />
-          </motion.span>
-          <span className="relative h-4 text-xs font-medium text-white/80">
-            <motion.span className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap" style={{ opacity: pullLabel }}>
-              Pull to pay
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-medium tracking-wide text-[#5a6478] uppercase">Record a payment</p>
+            <span className="relative grid size-7 place-items-center overflow-hidden rounded-full ring-2 ring-[#10b981]" data-testid="pull-to-pay-hint">
+              <motion.span className="absolute inset-0 rounded-full bg-[#10b981]" style={{ scale: fillScale }} />
+              <IndianRupee className="relative size-3.5 text-white mix-blend-difference" aria-hidden />
+            </span>
+          </div>
+          <p className="mt-0.5 text-sm font-semibold">You{payerName ? ` (${payerName})` : ""}</p>
+          <p className="mt-2 font-heading text-3xl tabular-nums text-[#0f1524]/35">₹0</p>
+          <div className="relative mt-2 h-4 text-xs font-medium text-[#5a6478]">
+            <motion.span className="absolute left-0" style={{ opacity: pullLabel }}>
+              Keep pulling…
             </motion.span>
-            <motion.span className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap" style={{ opacity: releaseLabel }}>
+            <motion.span className="absolute left-0 text-[#047857]" style={{ opacity: releaseLabel }}>
               Release to pay
             </motion.span>
-          </span>
+          </div>
         </motion.div>
       ) : null}
-      <motion.div style={{ y: pull }}>{children}</motion.div>
+      <motion.div className="relative z-[1]" style={{ y: pull }}>
+        {enabled ? (
+          <motion.div
+            className="-mt-1 mb-1 flex justify-center"
+            style={{ opacity: handleOpacity }}
+            data-testid="pull-handle"
+          >
+            <button
+              type="button"
+              onClick={() => triggerRef.current()}
+              aria-label="Payments: pull down to pay"
+              className="flex items-center gap-1.5 rounded-b-2xl rounded-t-md bg-white/10 px-3.5 pt-1 pb-1.5 text-xs font-medium text-white/85 ring-1 ring-white/10 backdrop-blur-sm"
+            >
+              <IndianRupee className="size-3.5 text-[var(--mint)]" aria-hidden />
+              <span>{nudging || firstLaunches ? "Pull down to pay" : "Payments"}</span>
+              <motion.span style={{ y: chevronY }} className="grid">
+                <ChevronDown className="size-3.5" aria-hidden />
+              </motion.span>
+            </button>
+          </motion.div>
+        ) : null}
+        {children}
+      </motion.div>
     </div>
   );
 }

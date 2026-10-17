@@ -1,16 +1,24 @@
 rules_version = '2';
-// Rules for a private six-person plot ledger. These rules are the source of truth;
+// Rules for one private plot-ledger group. These rules are the source of truth;
 // the UI only mirrors them.
 //
+// Sign-in: Google only. Profiles can only be created from a Google sign-in with a
+// verified email (request.auth.token.firebase.sign_in_provider == 'google.com').
+//
 // Roles
-//   - linked member: a users/{uid} profile whose personId names a roster person that
-//     links back to the same uid (people/{personId}.linkedUid == uid). Reads the whole
-//     ledger and records payments ONLY for their own person.
-//   - unlinked account: signed up but not linked yet. Reads only its own profile and
-//     settings/access, and sees "Ask the admin to link your account".
-//   - admin (settings/access.adminUids): manages the roster, linking and admins, and can
-//     read the ledger. Admins get NO extra payment powers: nobody can record, edit or
-//     delete money for somebody else.
+//   - waiting account: signed in with Google, has a users/{uid} profile, but no admin has
+//     approved it yet (not linked to a roster person). Reads only its own profile and
+//     settings/access, and sees "Waiting for approval".
+//   - member: a profile whose personId names a roster person that links back to the same
+//     uid (people/{personId}.linkedUid == uid). Reads the whole ledger and records
+//     payments ONLY for their own person.
+//   - admin (settings/access.adminUids): approves accounts (creates a roster person from
+//     the Google profile, or links an existing one), edits the roster (including marking
+//     the 0% homeowner), and manages admins. Admins get NO extra payment powers: nobody
+//     can record, edit or delete money for somebody else.
+//   - first admin: while settings/access does not exist, a signed-in Google account may
+//     create it naming only itself (one-time "claim admin"). After that only admins can
+//     change the admin list.
 //
 // Payments: create own only. Edit / delete own only, by the person who created the
 // entry, within 24 hours of creating it; after that an entry is permanent. Every write
@@ -18,72 +26,36 @@ rules_version = '2';
 // There is no public read or write.
 //
 // ===============================================================
-// Assumed Data Model
+// Data Model
 // ===============================================================
 //
-// Collection: settings
-// Document ID: access
-// Fields:
-//   - adminUids: list<string> (required, 1..6 uids, each 8..128 chars)
-//   - createdAt: timestamp (required, immutable)
-// Create: the first signed-in member, and only while the doc is absent,
-//         may create it with adminUids == [their own uid].
-// Update: an existing admin, who must remain in the list.
+// settings/access
+//   - adminUids: list<string> (1..6 uids)        - createdAt: timestamp (immutable)
+//   Create: one-time claim (see above). Update: an admin who stays in the list.
 //
-// Collection: users
-// Document ID: request.auth.uid
-// Fields:
-//   - email: string (required, must match the auth token, immutable, <= 200)
-//   - displayName: string (required, 1..80)
-//   - personId: string or null (required; null on self-create; admin may link an existing person)
-//   - createdAt: timestamp (required, immutable)
-// Read: the owner or an admin. Emails are not readable by other members.
-// No role field. Admin authority lives only in settings/access.
+// users/{uid}  (uid == request.auth.uid)
+//   - email: string (= Google email, immutable)  - displayName: string 1..80 (Google name)
+//   - photoURL: string <= 2048 or null (Google photo)
+//   - personId: string or null (null until an admin approves)
+//   - createdAt: timestamp (immutable)
+//   Read: owner or admin. Owner may refresh displayName/photoURL; only admins set personId.
 //
-// Collection: people
-// Document ID: stable roster id (ananya, rohan, kavita, arjun, meera, suresh)
-// Fields:
-//   - name: string (required, 1..80)
-//   - role: "contributor" | "homeowner"
-//   - color: string #rrggbb
-//   - sortOrder: int 0..20
-//   - linkedUid: string uid or null (must name an existing user when set)
-//   - linkedLabel: string 0..80 (display name only, no email)
-// Clients may update (admin only). Create and delete are denied; the Admin SDK seeds the six people.
+// people/{personId}
+//   - name 1..80, role "contributor" | "homeowner", color #rrggbb, sortOrder 0..50,
+//     linkedUid (existing user uid or null), linkedLabel 0..80, photoURL (optional)
+//   Read: members and admins. Create / update: admins. Delete: denied.
 //
-// Collection: payments
-// Document ID: auto-id
-// Fields:
-//   - personId: string (required, existing person, <= 40)
-//   - amountPaise: int (required, > 0, <= 10 crore rupees in paise)
-//   - date: timestamp (required)
-//   - note: string (required, may be empty, <= 500)
-//   - createdBy: string uid (required, must be the signer on create, immutable)
-//   - updatedBy: string uid (required, must be the signer)
-//   - createdAt: timestamp (required, request.time on create, immutable)
-//   - updatedAt: timestamp (required, request.time)
-// Read: linked members and admins.
-// Create: a linked member, for their own personId only, createdBy/updatedBy == signer.
-// Update / delete: the creator, still linked to the same person, within 24h of createdAt;
-//   personId, createdBy and createdAt cannot change.
+// payments/{auto-id}
+//   - personId, amountPaise (int, 1..10 crore rupees), date, note <= 500,
+//     createdBy, updatedBy, createdAt, updatedAt
+//   Read: members and admins. Create: a member, for their own person only.
+//   Update / delete: the creator, still linked to the same person, within 24h.
 //
-// Collection: audit
-// Document ID: auto-id
-// Fields:
-//   - action: "create" | "update" | "delete"
-//   - entity: "payment" | "person" | "access"
-//   - entityId: string 1..80
-//   - actorUid: string (must be the signer)
-//   - actorName: string (must equal the signer's users/{uid}.displayName)
-//   - summary: string 1..400
-//   - at: timestamp (request.time)
-// Create: payment entries by the member whose payment it describes (checked against
-//   the payment write in the same batch); person / access entries by admins.
-// Update and delete: denied.
-//
-// Client queries: collection reads of people, payments, and audit with no where/orderBy
-// (sorting is client-side). users is read as a single document by members and as a
-// collection by admins. settings/access is a single-document read.
+// audit/{auto-id}
+//   - action, entity ("payment" | "person" | "access"), entityId, actorUid, actorName,
+//     summary, at
+//   Create: payment entries by the member whose payment it describes (checked against
+//   the payment write in the same batch); person / access entries by admins. Immutable.
 //
 // ===============================================================
 
@@ -107,6 +79,13 @@ service cloud.firestore {
 
     function isMember() {
       return isAuthenticated() && exists(userPath(request.auth.uid));
+    }
+
+    function isGoogle() {
+      return isAuthenticated()
+        && request.auth.token.firebase.sign_in_provider == 'google.com'
+        && request.auth.token.email is string
+        && request.auth.token.email_verified == true;
     }
 
     function myPersonId() {
@@ -169,6 +148,18 @@ service cloud.firestore {
         && data.createdAt is timestamp;
     }
 
+    // personId as it will be after this write (an approval creates the person in the same batch)
+    function isValidPersonIdAfter(personId) {
+      return personId is string
+        && personId.size() > 0
+        && personId.size() <= 40
+        && existsAfter(personPath(personId));
+    }
+
+    function isPhoto(value) {
+      return value == null || (value is string && value.size() <= 2048);
+    }
+
     function isValidPersonId(personId) {
       return personId is string
         && personId.size() > 0
@@ -177,7 +168,8 @@ service cloud.firestore {
     }
 
     function isValidUser(data) {
-      return data.keys().hasOnly(['email', 'displayName', 'personId', 'createdAt'])
+      return data.keys().hasOnly(['email', 'displayName', 'photoURL', 'personId', 'createdAt'])
+        && isPhoto(data.get('photoURL', null))
         && data.email is string
         && data.email.size() > 3
         && data.email.size() <= 200
@@ -185,11 +177,12 @@ service cloud.firestore {
         && data.displayName.size() > 0
         && data.displayName.size() <= 80
         && data.createdAt is timestamp
-        && (data.personId == null || isValidPersonId(data.personId));
+        && (data.personId == null || isValidPersonIdAfter(data.personId));
     }
 
     function isValidPerson(data) {
-      return data.keys().hasOnly(['name', 'role', 'color', 'sortOrder', 'linkedUid', 'linkedLabel'])
+      return data.keys().hasOnly(['name', 'role', 'color', 'sortOrder', 'linkedUid', 'linkedLabel', 'photoURL'])
+        && isPhoto(data.get('photoURL', null))
         && data.name is string
         && data.name.size() > 0
         && data.name.size() <= 80
@@ -198,7 +191,7 @@ service cloud.firestore {
         && data.color.matches('^#[0-9a-fA-F]{6}$')
         && data.sortOrder is int
         && data.sortOrder >= 0
-        && data.sortOrder <= 20
+        && data.sortOrder <= 50
         && data.linkedLabel is string
         && data.linkedLabel.size() <= 80
         && (
@@ -262,8 +255,9 @@ service cloud.firestore {
     match /settings/access {
       allow read: if isMember();
 
+      // one-time claim: only while no admin exists, by a Google member, naming only itself
       allow create: if isMember()
-        && request.auth.token.email is string
+        && isGoogle()
         && !exists(accessPath())
         && isValidAccess(request.resource.data)
         && request.resource.data.adminUids.size() == 1
@@ -283,7 +277,7 @@ service cloud.firestore {
       allow list: if isAdmin();
 
       allow create: if isOwner(uid)
-        && request.auth.token.email is string
+        && isGoogle()
         && request.resource.data.email == request.auth.token.email
         && request.resource.data.personId == null
         && request.resource.data.createdAt == request.time
@@ -302,7 +296,10 @@ service cloud.firestore {
 
     match /people/{personId} {
       allow read: if canReadLedger();
-      allow create: if false;
+      allow create: if isAdmin()
+        && personId.size() <= 40
+        && personId.matches('^[A-Za-z0-9_-]+$')
+        && isValidPerson(request.resource.data);
       allow delete: if false;
       allow update: if isAdmin() && isValidPerson(request.resource.data);
     }

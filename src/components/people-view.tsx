@@ -19,8 +19,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { firebaseReady } from "@/lib/firebase";
 import { formatPercentHundredths, type PersonRole } from "@/lib/ledger-math";
-import type { PersonRecord } from "@/lib/records";
-import { savePerson, updateAdmins } from "@/lib/writes";
+import type { PersonRecord, UserRecord } from "@/lib/records";
+import { approveAccount, savePerson, updateAdmins } from "@/lib/writes";
+import { Avatar } from "@/components/avatar";
+import { BUNDLE_NATIVE_BUILD, BUNDLE_VERSION } from "@/lib/app-update";
 
 export function PeopleView() {
   const ledger = useLedger();
@@ -55,17 +57,23 @@ export function PeopleView() {
       <header>
         <h1 className="font-heading text-3xl">People</h1>
         <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
-          Five contributors and one homeowner. Accounts sign up on their own, then an admin links each login to a
-          person. Linked people see the whole ledger and record only their own payments; the admin manages
-          the roster and links, never payments for someone else.
+          Everyone signs in with Google and waits until the admin approves them. Approved members see the whole
+          ledger and record only their own payments; the admin approves people, marks the homeowner (0% share)
+          and never records money for someone else.
         </p>
       </header>
+      {ledger.isAdmin ? <PendingApprovals /> : null}
+      {ledger.people.length === 0 ? (
+        <p className="text-muted-foreground rounded-xl border border-dashed p-4 text-sm" data-testid="roster-empty">
+          Nobody is on the roster yet.{ledger.isAdmin ? " Approve yourself above to get started." : ""}
+        </p>
+      ) : null}
       <motion.ul variants={listVariants} initial="hidden" animate="show" className="grid gap-3">
         {ledger.people.map((person) => {
           const share = ledger.shares.find((item) => item.personId === person.id);
           return (
             <motion.li variants={sideItemVariants} key={person.id} className="bg-card flex flex-wrap items-center gap-3 rounded-xl p-4 ring-1 ring-foreground/10">
-              <span className="size-3 rounded-full" style={{ background: person.color }} />
+              <Avatar name={person.name} photoURL={person.photoURL} color={person.color} className="size-10" />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="font-medium">{person.name}</h2>
@@ -91,7 +99,8 @@ export function PeopleView() {
         <section className="bg-card rounded-xl p-4 ring-1 ring-foreground/10">
           <h2 className="font-heading text-xl">Admins</h2>
           <p className="text-muted-foreground mt-1 mb-3 text-sm">
-            Admins can record payments and edit people. You can&apos;t remove your own admin access from here.
+            Admins approve new members and edit the roster. They can&apos;t record money for anyone else, and you
+            can&apos;t remove your own admin access from here.
           </p>
           <ul className="grid gap-2">
             {ledger.accounts.map((account) => {
@@ -131,10 +140,13 @@ export function PeopleView() {
           ) : null}
         </section>
       ) : (
-        <p className="text-muted-foreground text-sm">You can read the roster. An admin links accounts and edits names.</p>
+        <p className="text-muted-foreground text-sm">You can read the roster. The admin approves members and edits names.</p>
       )}
 
       <PersonDialog person={editing} onClose={() => setEditing(null)} />
+      <p className="text-muted-foreground pt-2 text-center text-xs" data-testid="app-version">
+        Plot Ledger v{BUNDLE_VERSION} · build {BUNDLE_NATIVE_BUILD}
+      </p>
     </div>
   );
 }
@@ -194,7 +206,11 @@ function PersonForm({ person, onClose }: { person: PersonRecord; onClose: () => 
         </div>
         <div className="grid gap-1.5">
           <Label>Role</Label>
-          <Select value={role} onValueChange={(value) => value && setRole(value as PersonRole)}>
+          <Select
+            value={role}
+            items={{ contributor: "Contributor", homeowner: "Homeowner" }}
+            onValueChange={(value) => value && setRole(value as PersonRole)}
+          >
             <SelectTrigger className="h-11 w-full">
               <SelectValue />
             </SelectTrigger>
@@ -206,7 +222,11 @@ function PersonForm({ person, onClose }: { person: PersonRecord; onClose: () => 
         </div>
         <div className="grid gap-1.5">
           <Label>Linked account</Label>
-          <Select value={linkedUid} onValueChange={(value) => setLinkedUid(value ?? "none")}>
+          <Select
+            value={linkedUid}
+            items={{ none: "Not linked", ...Object.fromEntries(accounts.map((account) => [account.uid, account.displayName])) }}
+            onValueChange={(value) => setLinkedUid(value ?? "none")}
+          >
             <SelectTrigger className="h-11 w-full">
               <SelectValue />
             </SelectTrigger>
@@ -231,5 +251,106 @@ function PersonForm({ person, onClose }: { person: PersonRecord; onClose: () => 
         </Button>
       </DialogFooter>
     </form>
+  );
+}
+
+/** Admin: Google accounts waiting to join, with "add to roster" or "link to existing person". */
+function PendingApprovals() {
+  const { accounts, people, profile } = useLedger();
+  const waiting = accounts.filter((account) => !account.personId);
+  const free = people.filter((person) => !person.linkedUid);
+  if (waiting.length === 0) return null;
+  return (
+    <section className="rounded-xl bg-[#ecfdf5] p-4 ring-1 ring-[#34d399]/40" data-testid="pending-approvals">
+      <h2 className="font-heading text-xl">Waiting for approval</h2>
+      <p className="text-muted-foreground mt-1 mb-3 text-sm">
+        These Google accounts signed in but can&apos;t see the ledger yet.
+      </p>
+      <ul className="grid gap-3">
+        {waiting.map((account) => (
+          <PendingRow key={account.uid} account={account} free={free} self={account.uid === profile?.uid} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function PendingRow({ account, free, self }: { account: UserRecord; free: PersonRecord[]; self: boolean }) {
+  const { people, accounts, profile } = useLedger();
+  const [role, setRole] = useState<PersonRole>("contributor");
+  const [linkTo, setLinkTo] = useState<string>("new");
+  const [busy, setBusy] = useState(false);
+
+  async function approve() {
+    if (!profile) return;
+    setBusy(true);
+    try {
+      const { db } = await firebaseReady();
+      await approveAccount(
+        db,
+        { uid: profile.uid, name: profile.displayName },
+        people,
+        accounts,
+        account,
+        linkTo === "new" ? { mode: "new", role } : { mode: "link", personId: linkTo },
+      );
+      toast.success(`${account.displayName} approved`);
+    } catch (error) {
+      toast.error(authErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <li className="flex flex-wrap items-center gap-3 rounded-xl bg-white p-3 ring-1 ring-foreground/10" data-testid={`pending-${account.uid}`}>
+      <Avatar name={account.displayName} photoURL={account.photoURL} className="size-10" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-medium">
+          {account.displayName}
+          {self ? " (you)" : ""}
+        </p>
+        <p className="text-muted-foreground truncate text-xs">{account.email}</p>
+      </div>
+      <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+        {free.length > 0 ? (
+          <Select
+            value={linkTo}
+            items={{ new: "New roster person", ...Object.fromEntries(free.map((person) => [person.id, `Link to ${person.name}`])) }}
+            onValueChange={(value) => setLinkTo(value ?? "new")}
+          >
+            <SelectTrigger className="h-10 min-w-36" aria-label="Roster entry">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="new">New roster person</SelectItem>
+              {free.map((person) => (
+                <SelectItem key={person.id} value={person.id}>
+                  Link to {person.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
+        {linkTo === "new" ? (
+          <Select
+            value={role}
+            items={{ contributor: "Contributor", homeowner: "Homeowner (0%)" }}
+            onValueChange={(value) => value && setRole(value as PersonRole)}
+          >
+            <SelectTrigger className="h-10 min-w-32" aria-label="Role">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="contributor">Contributor</SelectItem>
+              <SelectItem value="homeowner">Homeowner (0%)</SelectItem>
+            </SelectContent>
+          </Select>
+        ) : null}
+        <Button className="h-10" disabled={busy} onClick={() => void approve()}>
+          {busy ? "Approving…" : "Approve"}
+        </Button>
+      </div>
+    </li>
   );
 }

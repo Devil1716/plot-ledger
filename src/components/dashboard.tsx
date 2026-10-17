@@ -7,6 +7,7 @@ import { PayFlow } from "@/components/pay-flow";
 import { PullToPay } from "@/components/pull-to-pay";
 import { useTabActive } from "@/components/tab-active";
 import { SharesPanel } from "@/components/shares-panel";
+import { Avatar as PersonAvatar } from "@/components/avatar";
 import { useLedger } from "@/components/ledger-provider";
 import { CountUp, EASE_OUT, itemVariants, listVariants, motion, popVariants, tap } from "@/components/motion-bits";
 import {
@@ -19,28 +20,14 @@ import {
   TARGET_PAISE,
 } from "@/lib/ledger-math";
 
-function initialsOf(name: string) {
-  return name
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
-
-function Avatar({ name, color, size = "md" }: { name: string; color: string; size?: "sm" | "md" }) {
+function Avatar({ name, color, photoURL, size = "md" }: { name: string; color: string; photoURL?: string; size?: "sm" | "md" }) {
   return (
-    <span
-      aria-hidden
-      className={
-        size === "sm"
-          ? "grid size-9 place-items-center rounded-full text-xs font-semibold text-[#0b0f1a] ring-2 ring-[#121829]"
-          : "grid size-11 place-items-center rounded-full text-sm font-semibold text-[#0b0f1a]"
-      }
-      style={{ background: color }}
-    >
-      {initialsOf(name)}
-    </span>
+    <PersonAvatar
+      name={name}
+      color={color}
+      photoURL={photoURL}
+      className={size === "sm" ? "size-9 ring-2 ring-[#121829]" : "size-11 text-sm"}
+    />
   );
 }
 
@@ -81,17 +68,17 @@ export function Dashboard() {
   if (people.length === 0) {
     return (
       <section className="sheet mx-4 rounded-3xl p-6">
-        <h1 className="font-heading text-2xl">The roster is empty</h1>
-        <p className="text-muted-foreground mt-2 max-w-prose text-sm">
-          Start the Auth and Firestore emulators, then run <code>pnpm seed:demo</code>. The six people are
-          seeded there; this app does not create a Firebase project for you.
+        <h1 className="font-heading text-2xl">Nobody is on the roster yet</h1>
+        <p className="text-muted-foreground mt-2 max-w-prose text-sm" data-testid="empty-roster">
+          Open People and approve the members who signed in with Google, starting with yourself. Each approved
+          member can then record their own payments here.
         </p>
       </section>
     );
   }
 
   return (
-    <PullToPay enabled={canPay && tabActive && !open} onTrigger={openPay}>
+    <PullToPay enabled={canPay && tabActive && !open} onTrigger={openPay} payerName={people.find((person) => person.id === myPersonId)?.name.split(" ")[0]}>
     <motion.div
       className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)] lg:items-start"
       animate={open ? { x: "-28%", scale: 0.94, opacity: 0.55 } : { x: 0, scale: 1, opacity: 1 }}
@@ -218,7 +205,7 @@ export function Dashboard() {
             >
               {contributors.map((person) => (
                 <motion.li key={person.id} title={person.name} variants={popVariants}>
-                  <Avatar name={person.name} color={person.color} size="sm" />
+                  <Avatar name={person.name} color={person.color} photoURL={person.photoURL} size="sm" />
                   <span className="sr-only">{person.name}</span>
                 </motion.li>
               ))}
@@ -227,7 +214,7 @@ export function Dashboard() {
         </div>
         {homeowner ? (
           <p className="mt-3 flex items-center gap-2 text-xs text-white/70">
-            <Avatar name={homeowner.name} color={homeowner.color} size="sm" />
+            <Avatar name={homeowner.name} color={homeowner.color} photoURL={homeowner.photoURL} size="sm" />
             <span>
               {homeowner.name} (homeowner) paid {formatInrFromPaise(homeownerPaid)} · counted in the total, ownership
               stays 0%
@@ -275,7 +262,7 @@ export function Dashboard() {
               const person = people.find((item) => item.id === payment.personId);
               return (
                 <motion.li key={payment.id} variants={itemVariants} className="flex items-center gap-3 py-3">
-                  <Avatar name={person?.name ?? "?"} color={person?.color ?? "#94A3B8"} />
+                  <Avatar name={person?.name ?? "?"} color={person?.color ?? "#94A3B8"} photoURL={person?.photoURL} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{person?.name ?? "Unknown person"}</p>
                     <p className="truncate text-xs text-[var(--muted-foreground)]">

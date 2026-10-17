@@ -1,6 +1,7 @@
 {
   "name": "plot-ledger",
-  "version": "0.1.0",
+  "version": "1.3.0",
+  "nativeBuild": 105,
   "private": true,
   "engines": {
     "node": ">=22"
@@ -27,6 +28,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
+    "@capacitor-firebase/authentication": "8.5.2",
     "@capacitor/android": "8.5.3",
     "@capacitor/app": "8.1.2",
     "@capacitor/core": "8.5.3",
@@ -34,6 +36,7 @@
     "@capacitor/ios": "8.5.3",
     "@capacitor/keyboard": "8.0.6",
     "@capacitor/splash-screen": "8.0.2",
+    "@capgo/capacitor-updater": "8.53.0",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.0",
     "firebase": "^13.0.0",
