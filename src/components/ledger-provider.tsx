@@ -66,7 +66,14 @@ function errorMessage(error: unknown): string {
     if (code.includes("invalid-email")) return "Enter a valid email address.";
     if (code.includes("popup-closed")) return "Google sign-in was closed before it finished.";
     if (code.includes("permission-denied")) return "You don't have permission to change the ledger.";
-    if (code.includes("network")) return "Can't reach Firebase. If you're on the emulators, start them and refresh.";
+    if (code.includes("too-many-requests")) return "Too many attempts. Wait a minute and try again.";
+    if (code.includes("user-disabled")) return "This account has been turned off. Ask an admin.";
+    if (code.includes("missing-password")) return "Enter your password.";
+    if (code.includes("unavailable") || code.includes("network")) {
+      return process.env.NEXT_PUBLIC_USE_EMULATORS === "true"
+        ? "Can't reach the Firebase emulators. Start them and refresh."
+        : "No connection. Check your internet and try again.";
+    }
   }
   return error instanceof Error ? error.message : "Something went wrong.";
 }

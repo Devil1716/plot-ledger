@@ -61,7 +61,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           type="button"
           aria-label="Sign out"
           onClick={() => void signOutUser()}
-          className="ml-auto grid size-10 place-items-center rounded-full bg-white/10 ring-1 ring-white/15 hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-white sm:ml-3"
+          className="ml-auto grid size-11 place-items-center rounded-full bg-white/10 ring-1 ring-white/15 hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-white sm:ml-3"
         >
           <LogOut className="size-4" />
         </button>
@@ -89,6 +89,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </main>
       <nav
         aria-label="Main"
+        data-bottom-nav
         className="fixed inset-x-0 bottom-[calc(1rem+var(--safe-bottom))] z-40 flex justify-center px-4"
       >
         <ul className="flex items-center gap-1 rounded-full bg-[#0b0f1a]/90 p-1.5 shadow-2xl shadow-black/50 ring-1 ring-white/10 backdrop-blur">
@@ -102,7 +103,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   data-testid={link.testId}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "relative flex h-11 items-center gap-2 rounded-full px-4 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-white",
+                    "relative flex h-12 min-w-12 items-center justify-center gap-2 rounded-full px-4 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-white",
                     active ? "px-6 text-[#0b0f1a]" : "text-white/70 hover:text-white",
                   )}
                 >
@@ -119,7 +120,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     animate={active ? { scale: [1, 1.45, 0.9, 1.1, 1], rotate: [0, -14, 8, 0] } : { scale: 1, rotate: 0 }}
                     transition={{ duration: 0.65, ease: "easeOut" }}
                   >
-                    <Icon className="size-4" aria-hidden />
+                    <Icon className="size-5" aria-hidden />
                   </motion.span>
                   <span className={cn("relative", active ? "" : "sr-only sm:not-sr-only")}>{link.label}</span>
                 </Link>

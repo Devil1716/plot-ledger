@@ -12,6 +12,7 @@ import {
   useTransform,
 } from "motion/react";
 import { ArrowLeft, ChevronDown, Delete } from "lucide-react";
+import { NATIVE_BACK_EVENT } from "@/components/native-shell";
 import { SlideToConfirm, type SlideStatus } from "@/components/slide-to-confirm";
 import { authErrorMessage, useLedger } from "@/components/ledger-provider";
 import { CountUp, EASE_OUT, seeded } from "@/components/motion-bits";
@@ -82,6 +83,24 @@ function PayFlowInner({ onClose }: { onClose: () => void }) {
     };
   }, []);
 
+  // Android back / Escape: amount sheet → who paid → close
+  useEffect(() => {
+    const goBack = (event: Event) => {
+      event.preventDefault();
+      if (step === "amount") setStep("pick");
+      else onClose();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") goBack(event);
+    };
+    window.addEventListener(NATIVE_BACK_EVENT, goBack);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener(NATIVE_BACK_EVENT, goBack);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onClose, step]);
+
   const paidBy = useCallback(
     (id: string) => shares.find((share) => share.personId === id)?.amountPaise ?? 0,
     [shares],
@@ -110,7 +129,7 @@ function PayFlowInner({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={onClose}
             aria-label="Back to ledger"
-            className="grid size-10 place-items-center rounded-full bg-white/10 ring-1 ring-white/15 focus-visible:outline-2 focus-visible:outline-white"
+            className="grid size-11 place-items-center rounded-full bg-white/10 ring-1 ring-white/15 focus-visible:outline-2 focus-visible:outline-white"
           >
             <ArrowLeft className="size-4" aria-hidden />
           </motion.button>

@@ -163,7 +163,7 @@ function FilterChip({
     <button
       type="button"
       onClick={onClick}
-      className={`h-9 shrink-0 rounded-full px-3 text-sm ${active ? "bg-primary text-primary-foreground" : "bg-muted"}`}
+      className={`h-11 shrink-0 rounded-full px-3 text-sm ${active ? "bg-primary text-primary-foreground" : "bg-muted"}`}
     >
       {children}
     </button>

@@ -1,4 +1,5 @@
 import type { CapacitorConfig } from "@capacitor/cli";
+import { KeyboardResize } from "@capacitor/keyboard";
 
 // Talking to the local Firebase emulators (http://10.0.2.2 from the Android
 // emulator) needs cleartext + mixed content, because the app itself is served
@@ -31,6 +32,11 @@ const config: CapacitorConfig = {
       androidScaleType: "CENTER_CROP",
       splashFullScreen: false,
       splashImmersive: false,
+    },
+    // Android: resize the WebView above the keyboard even though the app is edge to edge
+    Keyboard: {
+      resize: KeyboardResize.Native,
+      resizeOnFullScreen: true,
     },
     // Bundled with @capacitor/core 8: edge-to-edge status/navigation bars.
     // "css" also injects --safe-area-inset-* for Android WebViews < 140 whose

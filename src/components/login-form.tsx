@@ -20,6 +20,7 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const emulators = usingEmulators();
   // Google popup sign-in can't run inside the iOS/Android WebView, and a real
   // project only offers it once the provider is enabled (NEXT_PUBLIC_GOOGLE_SIGN_IN).
@@ -74,12 +75,12 @@ export function LoginForm() {
       <motion.form onSubmit={(event) => void onSubmit(event)} className="sheet relative grid gap-4 rounded-[2rem] p-6" initial={{ opacity: 0, y: 120, scale: 0.9, rotate: -2 }} animate={{ opacity: 1, y: 0, scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 140, damping: 14, delay: 0.15 }}>
         <div>
           <h2 className="font-heading text-2xl">{mode === "create" ? "Create an account" : "Sign in"}</h2>
-          <p className="text-muted-foreground mt-1 text-sm">Your session stays on this browser.</p>
+          <p className="text-muted-foreground mt-1 text-sm">You stay signed in on this device until you sign out.</p>
         </div>
         {mode === "create" ? (
           <div className="grid gap-1.5">
             <Label htmlFor="name">Name</Label>
-            <Input id="name" value={name} onChange={(event) => setName(event.target.value)} className="h-11" required />
+            <Input id="name" value={name} onChange={(event) => setName(event.target.value)} className="h-12 text-base" autoComplete="name" enterKeyHint="next" required />
           </div>
         ) : null}
         <div className="grid gap-1.5">
@@ -87,27 +88,47 @@ export function LoginForm() {
           <Input
             id="email"
             type="email"
+            inputMode="email"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            enterKeyHint="next"
             autoComplete="username"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="h-11"
+            className="h-12 text-base"
             required
           />
         </div>
-        <div className="grid gap-1.5">
+        <div className="relative grid gap-1.5">
           <Label htmlFor="password">Password</Label>
           <Input
             id="password"
-            type="password"
+            type={showPassword ? "text" : "password"}
+            enterKeyHint="go"
             autoComplete={mode === "create" ? "new-password" : "current-password"}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="h-11"
+            className="h-12 pr-16 text-base"
             required
           />
+          <button
+            type="button"
+            onClick={() => setShowPassword((value) => !value)}
+            aria-pressed={showPassword}
+            aria-controls="password"
+            title={showPassword ? "Hide what you typed" : "Show what you typed"}
+            className="absolute right-1 bottom-1 h-10 rounded-lg px-3 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+          >
+            {showPassword ? "Hide" : "Show"}
+          </button>
         </div>
-        {error ? <p className="text-destructive text-sm">{error}</p> : null}
-        <Button type="submit" className="h-11" disabled={busy}>
+        {error ? (
+          <p role="alert" className="text-destructive rounded-lg bg-red-50 px-3 py-2 text-sm">
+            {error}
+          </p>
+        ) : null}
+        <Button type="submit" className="h-12 text-base" disabled={busy}>
           {busy ? "Please wait…" : mode === "create" ? "Create account" : "Sign in"}
         </Button>
         {showGoogle ? (
@@ -125,7 +146,7 @@ export function LoginForm() {
         ) : null}
         <button
           type="button"
-          className="text-sm underline-offset-4 hover:underline"
+          className="min-h-11 text-sm underline-offset-4 hover:underline"
           onClick={() => {
             setMode(mode === "create" ? "sign-in" : "create");
             setError(null);

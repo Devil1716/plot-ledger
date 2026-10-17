@@ -15,6 +15,8 @@ async function addPayment(page: Page, person: string, amount: string, date: stri
   await page.getByTestId("add-payment").click();
   const flow = page.getByTestId("pay-flow");
   await expect(flow.getByRole("heading", { name: "Who paid?" })).toBeVisible();
+  // the overlay must cover the screen (regression: it once rendered below the page)
+  await expect(flow.getByRole("heading", { name: "Who paid?" })).toBeInViewport();
   await flow.getByRole("button", { name: new RegExp(`^${person.split(" · ")[0]},`) }).click();
   for (const char of amount.replace(/,/g, "")) {
     await flow.getByTestId(char === "." ? "key-dot" : `key-${char}`).click();

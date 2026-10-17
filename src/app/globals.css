@@ -140,7 +140,8 @@
 }
 /* v3 ink + mint */
 .app-dark {
-  position: relative;
+  /* no `position` here: unlayered CSS would override Tailwind's `fixed` on the
+     pay-flow overlay. isolation alone keeps the glow layer behind the content. */
   isolation: isolate;
   background: var(--ink-900);
   min-height: 100vh;
@@ -224,4 +225,9 @@ html.native input,
 html.native textarea {
   -webkit-user-select: text;
   user-select: text;
+}
+
+/* the floating nav would sit on top of the keyboard; hide it while typing */
+html.keyboard-open [data-bottom-nav] {
+  display: none;
 }

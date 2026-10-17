@@ -91,7 +91,7 @@ export function SharesPanel({
           onClick={() => setSort(SORTS[(SORTS.indexOf(sortInfo) + 1) % SORTS.length].id)}
           aria-label={`Sort shares, currently ${sortInfo.label}`}
           data-testid="shares-sort"
-          className="grid size-9 place-items-center rounded-full bg-white text-[#3c4558] shadow-sm ring-1 ring-[var(--border)] focus-visible:outline-2 focus-visible:outline-[var(--ring)]"
+          className="grid size-11 place-items-center rounded-full bg-white text-[#3c4558] shadow-sm ring-1 ring-[var(--border)] focus-visible:outline-2 focus-visible:outline-[var(--ring)]"
         >
           <AnimatePresence mode="wait" initial={false}>
             <motion.span key={sort} initial={{ rotate: -90, scale: 0.4 }} animate={{ rotate: 0, scale: 1 }} exit={{ rotate: 90, scale: 0.4 }} transition={{ type: "spring", stiffness: 500, damping: 20 }}>
@@ -109,7 +109,7 @@ export function SharesPanel({
           onClick={() => setMetric(METRICS[(METRICS.indexOf(metricInfo) + 1) % METRICS.length].id)}
           aria-label={`Show shares as ${METRICS[(METRICS.indexOf(metricInfo) + 1) % METRICS.length].label}, currently ${metricInfo.label}`}
           data-testid="shares-metric"
-          className="grid size-9 place-items-center rounded-full bg-white text-[#3c4558] shadow-sm ring-1 ring-[var(--border)] focus-visible:outline-2 focus-visible:outline-[var(--ring)]"
+          className="grid size-11 place-items-center rounded-full bg-white text-[#3c4558] shadow-sm ring-1 ring-[var(--border)] focus-visible:outline-2 focus-visible:outline-[var(--ring)]"
         >
           <AnimatePresence mode="wait" initial={false}>
             <motion.span key={metric} initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -10, opacity: 0 }} transition={{ type: "spring", stiffness: 500, damping: 24 }}>

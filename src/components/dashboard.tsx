@@ -246,7 +246,22 @@ export function Dashboard() {
           </Link>
         </div>
         {recent.length === 0 ? (
-          <p className="mt-2 text-sm text-[var(--muted-foreground)]">No payments yet. Every share is 0% until an admin records one.</p>
+          <div className="mt-3 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-[var(--border)] px-5 py-7 text-center" data-testid="payments-empty">
+            <span aria-hidden className="grid size-12 place-items-center rounded-full bg-[#34d399]/15 text-xl">₹</span>
+            <p className="text-base font-medium">No payments yet</p>
+            <p className="text-sm text-[var(--muted-foreground)]">
+              Every share stays at 0% until {isAdmin ? "you record" : "an admin records"} the first payment.
+            </p>
+            {isAdmin ? (
+              <button
+                type="button"
+                onClick={() => setOpen(true)}
+                className="h-12 rounded-full bg-[#0b0f1a] px-6 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-[var(--ring)]"
+              >
+                Record the first payment
+              </button>
+            ) : null}
+          </div>
         ) : (
           <motion.ul className="mt-2 divide-y divide-[var(--border)]" data-testid="recent-payments" variants={listVariants} initial="hidden" animate="show">
             {recent.map((payment) => {
