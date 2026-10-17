@@ -165,7 +165,7 @@ export function SlideToConfirm({
     <div
       ref={trackRef}
       data-testid="slide-to-confirm"
-      className="relative w-full overflow-hidden rounded-full bg-[#121829] shadow-[inset_0_2px_6px_rgb(0_0_0/0.45),0_8px_24px_rgb(18_24_41/0.25)] ring-1 ring-white/5 select-none"
+      className="relative w-full overflow-hidden rounded-full bg-[#121829] shadow-[inset_0_2px_6px_rgb(0_0_0/0.45),0_4px_12px_rgb(18_24_41/0.2)] ring-1 ring-white/5 select-none"
       style={{ height: TRACK_H, touchAction: "none", contain: "layout paint", transform: "translateZ(0)" }}
     >
       <motion.div

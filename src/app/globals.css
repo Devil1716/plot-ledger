@@ -143,6 +143,8 @@
   /* no `position` here: unlayered CSS would override Tailwind's `fixed` on the
      pay-flow overlay. isolation alone keeps the glow layer behind the content. */
   isolation: isolate;
+  /* page slide-ins start off to the side; never let them widen the page */
+  overflow-x: clip;
   background: var(--ink-900);
   min-height: 100vh;
 }
@@ -159,6 +161,18 @@
     radial-gradient(560px 380px at -10% 0%, rgb(122 167 245 / 0.12), transparent 60%),
     linear-gradient(180deg, var(--ink-900) 0%, var(--ink-800) 100%);
 }
+/* In the app: no extra full-screen composited layer (GPU fill-rate is the
+   bottleneck on phones). The glow is painted into the page background instead. */
+html.native .app-dark::before {
+  display: none;
+}
+html.native .app-dark {
+  background:
+    radial-gradient(640px 360px at 90% -8%, rgb(52 211 153 / 0.14), transparent 62%),
+    radial-gradient(560px 380px at -10% 0%, rgb(122 167 245 / 0.12), transparent 60%),
+    var(--ink-900);
+  background-repeat: no-repeat;
+}
 /* solid strip behind the (transparent, edge-to-edge) phone status bar so content
    scrolling up never shows through it; 0px tall in desktop browsers */
 .status-scrim {
@@ -174,11 +188,12 @@
   background: var(--background);
   color: var(--foreground);
   border: 1px solid rgb(255 255 255 / 0.06);
-  box-shadow: 0 -12px 48px rgb(3 6 14 / 0.45);
+  box-shadow: 0 -6px 18px rgb(3 6 14 / 0.35);
 }
 .glass {
-  background: linear-gradient(135deg, rgb(255 255 255 / 0.09), rgb(255 255 255 / 0.03));
-  backdrop-filter: blur(16px);
+  /* no backdrop-filter: on Android WebView it re-blurs every frame while
+     scrolling/animating, and over the flat ink background it looks the same */
+  background: linear-gradient(135deg, rgb(255 255 255 / 0.09), rgb(255 255 255 / 0.04));
   border: 1px solid rgb(255 255 255 / 0.1);
 }
 .tile {
@@ -194,21 +209,30 @@
   transition: opacity 0.3s ease;
 }
 
-/* slide-to-confirm label glint */
+/* slide-to-confirm label glint. Animating background-position repaints the text
+   on every frame (janky on phones); opacity runs on the compositor instead. */
 .slide-glint {
-  color: transparent;
-  background: linear-gradient(105deg, rgb(255 255 255 / 0.42) 38%, #ffffff 50%, rgb(255 255 255 / 0.42) 62%);
-  background-size: 260% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  animation: slide-glint 3.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  color: #ffffff;
+  animation: slide-glint 2.4s ease-in-out infinite;
+  will-change: opacity;
 }
 @keyframes slide-glint {
-  from { background-position: 130% 0; }
-  to { background-position: -30% 0; }
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+/* login backdrop glow: CSS keyframes on transform/opacity stay on the compositor
+   (a JS-driven loop would cost main-thread work on every frame) */
+.login-glow {
+  animation: login-glow 6s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+@keyframes login-glow {
+  0%, 100% { transform: translateX(-50%) scale(1); opacity: 0.6; }
+  50% { transform: translateX(-40%) scale(1.25); opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .slide-glint { animation: none; background: none; color: rgb(255 255 255 / 0.8); }
+  .slide-glint, .login-glow { animation: none; }
+  .slide-glint { opacity: 0.8; }
 }
 
 /* inside the iOS / Android app: feel native, not like a web page */

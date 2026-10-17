@@ -15,5 +15,8 @@ public class MainActivity extends BridgeActivity {
         // Draw behind the status / navigation bars; the web app pads itself with
         // the safe-area insets that Capacitor's SystemBars (insetsHandling: "css") provides.
         EdgeToEdge.enable(this);
+        // The full-screen WebView paints its own (ink) background, so the window
+        // background under it is pure overdraw on every frame. Drop it.
+        getWindow().setBackgroundDrawable(null);
     }
 }

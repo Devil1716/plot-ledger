@@ -57,11 +57,9 @@ export function LoginForm() {
     <MotionConfig reducedMotion="user">
     <div className="app-dark relative overflow-hidden">
       <div aria-hidden className="status-scrim" />
-      <motion.div
+      <div
         aria-hidden
-        className="pointer-events-none absolute -top-40 left-1/2 size-[36rem] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgb(52_211_153/0.28),transparent_65%)]"
-        animate={{ scale: [1, 1.25, 1], opacity: [0.6, 1, 0.6], x: ["-50%", "-40%", "-50%"] }}
-        transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+        className="login-glow pointer-events-none absolute -top-40 left-1/2 size-[36rem] rounded-full bg-[radial-gradient(circle,rgb(52_211_153/0.28),transparent_65%)]"
       />
     <div className="mx-auto grid min-h-screen w-full max-w-5xl items-center gap-8 px-4 pt-[calc(2.5rem+var(--safe-top))] pb-[calc(2.5rem+var(--safe-bottom))] md:grid-cols-2">
       <motion.section className="relative text-white" initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 150, damping: 16 }}>

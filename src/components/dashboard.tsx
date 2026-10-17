@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { memo, useState } from "react";
 import { BookOpenText, Plus } from "lucide-react";
 import { LandPlot } from "@/components/land-plot";
 import { PayFlow } from "@/components/pay-flow";
@@ -43,6 +43,11 @@ function Avatar({ name, color, size = "md" }: { name: string; color: string; siz
     </span>
   );
 }
+
+// Opening the pay flow re-renders Dashboard; the shares list (layout-animated rows)
+// and the land plot don't depend on that state, so skip re-rendering/measuring them.
+const SharesPanelMemo = memo(SharesPanel);
+const LandPlotMemo = memo(LandPlot);
 
 export function Dashboard() {
   const { people, payments, shares, profile, isAdmin, dataReady } = useLedger();
@@ -237,7 +242,7 @@ export function Dashboard() {
         transition={{ type: "spring", stiffness: 120, damping: 15, mass: 0.9, delay: 0.1 }}
       >
         <div aria-hidden className="mx-auto mb-3 h-1 w-10 rounded-full bg-[#d5d9e2]" />
-        <SharesPanel people={people} shares={shares} payments={payments} youId={profile?.personId ?? null} />
+        <SharesPanelMemo people={people} shares={shares} payments={payments} youId={profile?.personId ?? null} />
 
         <div className="mt-6 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Recent payments</h2>
@@ -291,7 +296,7 @@ export function Dashboard() {
             <span className="text-xs text-[var(--muted-foreground)] tabular-nums">54 × 105 ft · {LAND_SQFT.toLocaleString("en-IN")} sq ft</span>
           </div>
           <p className="mt-0.5 mb-4 text-sm text-[var(--muted-foreground)]">Each band is a contributor&apos;s share of the depth, front to back.</p>
-          <LandPlot people={people} shares={shares} />
+          <LandPlotMemo people={people} shares={shares} />
         </section>
         <div className="mt-4 flex gap-3 rounded-[1.25rem] bg-[#eef0f4] p-4 text-sm text-[#3c4558]">
           <span aria-hidden className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-white text-xs font-bold text-[#121829] ring-1 ring-[var(--border)]">i</span>

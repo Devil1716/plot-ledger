@@ -18,7 +18,9 @@ const ORDER = ["/history", "/", "/people"];
 let lastNavIndex = -1;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
+  // the static export (trailingSlash) reports "/history/"; compare without it
+  const rawPathname = usePathname();
+  const pathname = rawPathname.length > 1 ? rawPathname.replace(/\/+$/, "") : rawPathname;
   const { profile, isAdmin, signOutUser, people } = useLedger();
   const linked = people.find((person) => person.id === profile?.personId);
   const isLedger = pathname === "/";
@@ -92,7 +94,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         data-bottom-nav
         className="fixed inset-x-0 bottom-[calc(1rem+var(--safe-bottom))] z-40 flex justify-center px-4"
       >
-        <ul className="flex items-center gap-1 rounded-full bg-[#0b0f1a]/90 p-1.5 shadow-2xl shadow-black/50 ring-1 ring-white/10 backdrop-blur">
+        <ul className="flex items-center gap-1 rounded-full bg-[#0b0f1a] p-1.5 shadow-[0_6px_16px_rgb(0_0_0/0.4)] ring-1 ring-white/10">
           {links.map((link) => {
             const Icon = link.icon;
             const active = pathname === link.href;

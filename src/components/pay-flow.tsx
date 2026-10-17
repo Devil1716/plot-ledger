@@ -143,9 +143,9 @@ function PayFlowInner({ onClose }: { onClose: () => void }) {
             return (
               <motion.li
                 key={item.id}
-                initial={{ opacity: 0, y: 40, scale: 0.6 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ type: "spring", stiffness: 260, damping: 16, delay: 0.2 + index * 0.07 }}
+                initial={{ opacity: 0, y: 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, ease: EASE_OUT, delay: 0.12 + index * 0.04 }}
               >
                 <motion.button
                   whileTap={{ scale: 1.07 }}
@@ -159,19 +159,15 @@ function PayFlowInner({ onClose }: { onClose: () => void }) {
                   }}
                   className="glass flex w-full flex-col items-center gap-2 rounded-3xl px-3 py-5 text-center focus-visible:outline-2 focus-visible:outline-white"
                 >
-                  {step === "amount" && personId === item.id ? (
-                    <span aria-hidden className="size-16 rounded-full bg-white/5" />
-                  ) : (
-                    <motion.span
-                      layoutId={`pay-avatar-${item.id}`}
-                      aria-hidden
-                      className="grid size-16 place-items-center rounded-full text-lg font-semibold text-[#0b0f1a]"
-                      style={{ background: item.color }}
-                      transition={{ type: "spring", stiffness: 260, damping: 22 }}
-                    >
-                      {initialsOf(item.name)}
-                    </motion.span>
-                  )}
+                  {/* plain element: a shared layoutId here made motion measure the whole
+                      page on every frame of the transition, which stuttered on phones */}
+                  <span
+                    aria-hidden
+                    className="grid size-16 place-items-center rounded-full text-lg font-semibold text-[#0b0f1a]"
+                    style={{ background: item.color }}
+                  >
+                    {initialsOf(item.name)}
+                  </span>
                   <span className="text-sm font-semibold">{item.name}</span>
                   <span className="text-xs text-white/60">
                     {item.role === "homeowner"
@@ -354,7 +350,7 @@ function AmountSheet({
     <motion.section
       ref={sectionRef}
       aria-label={`Payment from ${person.name}`}
-      className="absolute inset-x-0 -bottom-16 top-[calc(0.75rem+var(--safe-top))] flex flex-col rounded-t-[2rem] bg-[var(--background)] text-[var(--foreground)] shadow-[0_-12px_48px_rgb(3_6_14/0.5)]"
+      className="absolute inset-x-0 -bottom-16 top-[calc(0.75rem+var(--safe-top))] flex flex-col rounded-t-[2rem] bg-[var(--background)] text-[var(--foreground)] shadow-[0_-6px_18px_rgb(3_6_14/0.4)]"
       initial={{ y: "100%" }}
       animate={{ y: 0 }}
       exit={{ y: "100%" }}
@@ -371,15 +367,13 @@ function AmountSheet({
           className="mx-auto mt-2 flex items-center gap-1 rounded-full px-2 py-1 text-xs text-[var(--muted-foreground)] hover:bg-[var(--muted)] focus-visible:outline-2 focus-visible:outline-[var(--ring)]"
           data-testid="pay-switch-person"
         >
-          <motion.span
-            layoutId={`pay-avatar-${person.id}`}
+          <span
             aria-hidden
             className="grid size-6 place-items-center rounded-full text-[9px] font-semibold text-[#0b0f1a]"
             style={{ background: person.color }}
-            transition={{ type: "spring", stiffness: 260, damping: 22 }}
           >
             {initialsOf(person.name)}
-          </motion.span>
+          </span>
           {person.name.split(" ")[0]} · {formatInrFromPaise(paidPaise)} paid so far
           <ChevronDown className="size-3.5" aria-hidden />
         </button>
@@ -639,21 +633,20 @@ function Success({ person, paise, onClose }: { person: PersonRecord; paise: bigi
 /** Each character slides up as it appears, like an odometer. */
 function Odometer({ text }: { text: string }) {
   return (
+    // Keyed from the right so digits already on screen keep their element while
+    // new ones roll in. No exit/popLayout: those measure layout on every key press.
     <span className="inline-flex overflow-hidden align-bottom">
-      <AnimatePresence initial={false} mode="popLayout">
-        {text.split("").map((char, index) => (
-          <motion.span
-            key={`${index}-${char}`}
-            className="inline-block whitespace-pre"
-            initial={{ y: "70%", opacity: 0, scale: 0.6 }}
-            animate={{ y: 0, opacity: 1, scale: 1 }}
-            exit={{ y: "-70%", opacity: 0 }}
-            transition={{ type: "spring", stiffness: 480, damping: 22 }}
-          >
-            {char}
-          </motion.span>
-        ))}
-      </AnimatePresence>
+      {text.split("").map((char, index, all) => (
+        <motion.span
+          key={`${all.length - index}-${char}`}
+          className="inline-block whitespace-pre"
+          initial={{ y: "60%", opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.18, ease: EASE_OUT }}
+        >
+          {char}
+        </motion.span>
+      ))}
     </span>
   );
 }
@@ -698,13 +691,13 @@ function KeypadKey({ item, onPress }: { item: { key: Key; label: string }; onPre
 
 const CONFETTI_COLORS = ["#7AA7F5", "#F29A85", "#EBC06C", "#A996F2", "#E38DB4", "#ffffff", "#0b0f1a"];
 
-/** Lightweight confetti: 42 transform/opacity-only particles bursting from the check mark. */
+/** Lightweight confetti: 24 transform/opacity-only particles bursting from the check mark. */
 function Confetti() {
   const reduce = useReducedMotion();
   if (reduce) return null;
   return (
     <span aria-hidden className="pointer-events-none absolute top-[42%] left-1/2">
-      {Array.from({ length: 42 }, (_, index) => {
+      {Array.from({ length: 24 }, (_, index) => {
         const angle = seeded(index) * Math.PI * 2;
         const distance = 140 + seeded(index + 100) * 220;
         const size = 6 + Math.round(seeded(index + 200) * 8);
