@@ -65,7 +65,7 @@ export function ShareCharts({ people, shares }: { people: PersonRecord[]; shares
         <p className="text-muted-foreground mb-3 text-sm">Everyone&apos;s payments, including the homeowner.</p>
         {paid.length === 0 ? (
           <p className="text-muted-foreground grid h-56 place-items-center text-center text-sm">
-            Payments will stack up here once an admin records them.
+            Payments will stack up here as each person records their own.
           </p>
         ) : (
           <motion.div

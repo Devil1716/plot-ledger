@@ -1,8 +1,21 @@
 rules_version = '2';
-// Prototype rules for a private six-person plot ledger.
-// Signed-in members (a users/{uid} profile) may read the ledger.
-// Only admins listed in settings/access may write.
-// There is no public read or write. Review before pointing this at a real project.
+// Rules for a private six-person plot ledger. These rules are the source of truth;
+// the UI only mirrors them.
+//
+// Roles
+//   - linked member: a users/{uid} profile whose personId names a roster person that
+//     links back to the same uid (people/{personId}.linkedUid == uid). Reads the whole
+//     ledger and records payments ONLY for their own person.
+//   - unlinked account: signed up but not linked yet. Reads only its own profile and
+//     settings/access, and sees "Ask the admin to link your account".
+//   - admin (settings/access.adminUids): manages the roster, linking and admins, and can
+//     read the ledger. Admins get NO extra payment powers: nobody can record, edit or
+//     delete money for somebody else.
+//
+// Payments: create own only. Edit / delete own only, by the person who created the
+// entry, within 24 hours of creating it; after that an entry is permanent. Every write
+// can be paired with an audit entry, and audit entries can never change.
+// There is no public read or write.
 //
 // ===============================================================
 // Assumed Data Model
@@ -49,7 +62,10 @@ rules_version = '2';
 //   - updatedBy: string uid (required, must be the signer)
 //   - createdAt: timestamp (required, request.time on create, immutable)
 //   - updatedAt: timestamp (required, request.time)
-// Read: members. Write: admin.
+// Read: linked members and admins.
+// Create: a linked member, for their own personId only, createdBy/updatedBy == signer.
+// Update / delete: the creator, still linked to the same person, within 24h of createdAt;
+//   personId, createdBy and createdAt cannot change.
 //
 // Collection: audit
 // Document ID: auto-id
@@ -61,7 +77,9 @@ rules_version = '2';
 //   - actorName: string (must equal the signer's users/{uid}.displayName)
 //   - summary: string 1..400
 //   - at: timestamp (request.time)
-// Create: admin. Update and delete: denied.
+// Create: payment entries by the member whose payment it describes (checked against
+//   the payment write in the same batch); person / access entries by admins.
+// Update and delete: denied.
 //
 // Client queries: collection reads of people, payments, and audit with no where/orderBy
 // (sorting is client-side). users is read as a single document by members and as a
@@ -89,6 +107,34 @@ service cloud.firestore {
 
     function isMember() {
       return isAuthenticated() && exists(userPath(request.auth.uid));
+    }
+
+    function myPersonId() {
+      return get(userPath(request.auth.uid)).data.personId;
+    }
+
+    // Linked both ways: the profile names the person and the person names this uid.
+    function isLinked() {
+      return isMember()
+        && myPersonId() is string
+        && exists(personPath(myPersonId()))
+        && get(personPath(myPersonId())).data.linkedUid == request.auth.uid;
+    }
+
+    function canReadLedger() {
+      return isLinked() || isAdmin();
+    }
+
+    function paymentPath(paymentId) {
+      return /databases/$(database)/documents/payments/$(paymentId);
+    }
+
+    // own payment, still editable: created by the signer, for the signer's person, < 24h old
+    function ownsEditablePayment(data) {
+      return isLinked()
+        && data.createdBy == request.auth.uid
+        && data.personId == myPersonId()
+        && request.time < data.createdAt + duration.value(24, 'h');
     }
 
     function isAdmin() {
@@ -168,6 +214,8 @@ service cloud.firestore {
         && data.amountPaise > 0
         && data.amountPaise <= 10000000000
         && data.date is timestamp
+        && data.date >= timestamp.date(2000, 1, 1)
+        && data.date <= request.time + duration.value(2, 'd')
         && data.note is string
         && data.note.size() <= 500
         && isUid(data.createdBy)
@@ -192,6 +240,23 @@ service cloud.firestore {
         && data.summary.size() > 0
         && data.summary.size() <= 400
         && data.at is timestamp;
+    }
+
+    // A payment audit entry must describe a payment write by the same signer in the same
+    // batch: create/update leave the payment updated by the signer; delete removes it.
+    function paymentAuditMatches(data) {
+      return (
+          data.action in ['create', 'update']
+          && existsAfter(paymentPath(data.entityId))
+          && getAfter(paymentPath(data.entityId)).data.updatedBy == request.auth.uid
+          && getAfter(paymentPath(data.entityId)).data.personId == myPersonId()
+        )
+        || (
+          data.action == 'delete'
+          && exists(paymentPath(data.entityId))
+          && !existsAfter(paymentPath(data.entityId))
+          && get(paymentPath(data.entityId)).data.personId == myPersonId()
+        );
     }
 
     match /settings/access {
@@ -236,37 +301,43 @@ service cloud.firestore {
     }
 
     match /people/{personId} {
-      allow read: if isMember();
+      allow read: if canReadLedger();
       allow create: if false;
       allow delete: if false;
       allow update: if isAdmin() && isValidPerson(request.resource.data);
     }
 
     match /payments/{paymentId} {
-      allow read: if isMember();
+      allow read: if canReadLedger();
 
-      allow create: if isAdmin()
+      // only for yourself: admins included, nobody records money for someone else
+      allow create: if isLinked()
         && isValidPayment(request.resource.data)
+        && request.resource.data.personId == myPersonId()
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.updatedBy == request.auth.uid
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time;
 
-      allow update: if isAdmin()
+      allow update: if ownsEditablePayment(resource.data)
         && isValidPayment(request.resource.data)
+        && request.resource.data.personId == resource.data.personId
         && request.resource.data.createdBy == resource.data.createdBy
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.updatedBy == request.auth.uid
         && request.resource.data.updatedAt == request.time;
 
-      allow delete: if isAdmin();
+      allow delete: if ownsEditablePayment(resource.data);
     }
 
     match /audit/{auditId} {
-      allow read: if isMember();
-      allow create: if isAdmin()
-        && isValidAudit(request.resource.data)
-        && request.resource.data.at == request.time;
+      allow read: if canReadLedger();
+      allow create: if isValidAudit(request.resource.data)
+        && request.resource.data.at == request.time
+        && (
+          (request.resource.data.entity == 'payment' && isLinked() && paymentAuditMatches(request.resource.data))
+          || (request.resource.data.entity != 'payment' && isAdmin())
+        );
       allow update: if false;
       allow delete: if false;
     }

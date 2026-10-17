@@ -16,6 +16,7 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  writeBatch,
   type Firestore,
 } from "firebase/firestore";
 import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
@@ -24,6 +25,7 @@ import { ROSTER } from "@/lib/roster";
 const ADMIN_UID = "admin-uid1";
 const MEMBER_UID = "member-uid";
 const STRANGER_UID = "stranger-uid";
+const UNLINKED_UID = "unlinked-uid";
 
 let testEnv: RulesTestEnvironment;
 
@@ -49,6 +51,15 @@ function memberDb(): Firestore {
   );
 }
 
+function unlinkedDb(): Firestore {
+  return dbOf(
+    testEnv.authenticatedContext(UNLINKED_UID, {
+      email: "new@plotshare.local",
+      email_verified: true,
+    }),
+  );
+}
+
 function verifiedDb(uid: string, email: string): Firestore {
   return dbOf(
     testEnv.authenticatedContext(uid, {
@@ -67,8 +78,8 @@ async function seedLedger(): Promise<void> {
         role: person.role,
         color: person.color,
         sortOrder: person.sortOrder,
-        linkedUid: null,
-        linkedLabel: "",
+        linkedUid: person.id === "ananya" ? ADMIN_UID : person.id === "rohan" ? MEMBER_UID : null,
+        linkedLabel: person.id === "ananya" ? "Ananya Iyer" : person.id === "rohan" ? "Rohan Mehta" : "",
       });
     }
     const createdAt = Timestamp.fromDate(new Date("2026-01-01T00:00:00Z"));
@@ -82,6 +93,12 @@ async function seedLedger(): Promise<void> {
       email: "member@plotshare.local",
       displayName: "Rohan Mehta",
       personId: "rohan",
+      createdAt,
+    });
+    await setDoc(doc(db, "users", UNLINKED_UID), {
+      email: "new@plotshare.local",
+      displayName: "New Person",
+      personId: null,
       createdAt,
     });
     await setDoc(doc(db, "settings", "access"), {
@@ -149,119 +166,224 @@ describe("default deny", () => {
   });
 });
 
-describe("member read, admin write", () => {
+function payment(personId: string, uid: string, overrides: Record<string, unknown> = {}) {
+  return paymentPayload({ personId, createdBy: uid, updatedBy: uid, ...overrides });
+}
+
+async function seedPayment(id: string, personId: string, uid: string, createdAt: Date): Promise<void> {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const at = Timestamp.fromDate(createdAt);
+    await setDoc(doc(dbOf(context), "payments", id), payment(personId, uid, { createdAt: at, updatedAt: at }));
+  });
+}
+
+function auditEntry(overrides: Record<string, unknown> = {}) {
+  return {
+    action: "create",
+    entity: "payment",
+    entityId: "pay1",
+    actorUid: MEMBER_UID,
+    actorName: "Rohan Mehta",
+    summary: "Recorded ₹25,00,000 for Rohan Mehta",
+    at: serverTimestamp(),
+    ...overrides,
+  };
+}
+
+const HOURS = 60 * 60 * 1000;
+
+describe("reading the ledger", () => {
   beforeEach(async () => {
     await seedLedger();
+    await seedPayment("pay-rohan", "rohan", MEMBER_UID, new Date());
   });
 
-  it("lets a member read the ledger but not another person's account", async () => {
+  it("lets a linked member read every payment, person and share, but not other accounts", async () => {
     const db = memberDb();
     await assertSucceeds(getDocs(collection(db, "people")));
     await assertSucceeds(getDocs(collection(db, "payments")));
+    await assertSucceeds(getDoc(doc(db, "payments", "pay-rohan")));
     await assertSucceeds(getDocs(collection(db, "audit")));
     await assertSucceeds(getDoc(doc(db, "settings", "access")));
     await assertSucceeds(getDoc(doc(db, "users", MEMBER_UID)));
     await assertFails(getDoc(doc(db, "users", ADMIN_UID)));
     await assertFails(getDocs(collection(db, "users")));
+    // the admin (linked to Ananya) reads Rohan's payment too
+    await assertSucceeds(getDoc(doc(adminDb(), "payments", "pay-rohan")));
   });
 
   it("lets an admin list accounts", async () => {
     await assertSucceeds(getDocs(collection(adminDb(), "users")));
   });
 
-  it("lets an admin record a homeowner payment and rejects bad amounts", async () => {
-    const db = adminDb();
-    await assertSucceeds(setDoc(doc(db, "payments", "pay-home"), paymentPayload({ personId: "suresh" })));
-    await assertFails(setDoc(doc(db, "payments", "pay-float"), paymentPayload({ amountPaise: 10.5 })));
-    await assertFails(setDoc(doc(db, "payments", "pay-zero"), paymentPayload({ amountPaise: 0 })));
-    await assertFails(setDoc(doc(db, "payments", "pay-ghost"), paymentPayload({ personId: "nobody" })));
-    await assertFails(setDoc(doc(db, "payments", "pay-extra"), paymentPayload({ role: "admin" })));
-    await assertFails(
-      setDoc(doc(db, "payments", "pay-note"), paymentPayload({ note: "x".repeat(501) })),
-    );
+  it("keeps an unlinked account out of the ledger (only its own profile and the admin list)", async () => {
+    const db = unlinkedDb();
+    await assertSucceeds(getDoc(doc(db, "users", UNLINKED_UID)));
+    await assertSucceeds(getDoc(doc(db, "settings", "access")));
+    await assertFails(getDocs(collection(db, "payments")));
+    await assertFails(getDoc(doc(db, "payments", "pay-rohan")));
+    await assertFails(getDocs(collection(db, "people")));
+    await assertFails(getDocs(collection(db, "audit")));
   });
 
-  it("stops members from creating, editing, or deleting payments", async () => {
-    await assertSucceeds(setDoc(doc(adminDb(), "payments", "pay1"), paymentPayload()));
+  it("treats a half-done link (profile names a person who doesn't link back) as unlinked", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(dbOf(context), "users", UNLINKED_UID), { personId: "kavita" });
+    });
+    const db = unlinkedDb();
+    await assertFails(getDocs(collection(db, "payments")));
+    await assertFails(setDoc(doc(db, "payments", "pay-k"), payment("kavita", UNLINKED_UID)));
+  });
+});
+
+describe("recording payments: only for yourself", () => {
+  beforeEach(async () => {
+    await seedLedger();
+  });
+
+  it("lets a linked member record their own payment", async () => {
+    await assertSucceeds(setDoc(doc(memberDb(), "payments", "pay1"), payment("rohan", MEMBER_UID)));
+  });
+
+  it("lets the admin record a payment for the person they are linked to", async () => {
+    await assertSucceeds(setDoc(doc(adminDb(), "payments", "pay1"), payment("ananya", ADMIN_UID)));
+  });
+
+  it("denies a member recording money for somebody else", async () => {
     const db = memberDb();
-    await assertFails(setDoc(doc(db, "payments", "pay2"), paymentPayload({ createdBy: MEMBER_UID, updatedBy: MEMBER_UID })));
-    await assertFails(deleteDoc(doc(db, "payments", "pay1")));
-    await assertFails(
-      updateDoc(doc(db, "payments", "pay1"), {
-        note: "changed",
-      }),
-    );
+    await assertFails(setDoc(doc(db, "payments", "pay1"), payment("kavita", MEMBER_UID)));
+    await assertFails(setDoc(doc(db, "payments", "pay2"), payment("ananya", MEMBER_UID)));
+    await assertFails(setDoc(doc(db, "payments", "pay3"), payment("suresh", MEMBER_UID)));
   });
 
-  it("keeps createdBy and createdAt immutable and allows a valid admin edit and delete", async () => {
+  it("denies the admin recording money for somebody else", async () => {
     const db = adminDb();
-    await assertSucceeds(setDoc(doc(db, "payments", "pay1"), paymentPayload()));
-    const created = await getDoc(doc(db, "payments", "pay1"));
-    const data = created.data();
-    if (!data) throw new Error("payment missing");
-
-    await assertSucceeds(
-      updateDoc(doc(db, "payments", "pay1"), {
-        personId: "kavita",
-        amountPaise: 260_000_000,
-        date: data.date,
-        note: "Adjusted",
-        createdBy: data.createdBy,
-        createdAt: data.createdAt,
-        updatedBy: ADMIN_UID,
-        updatedAt: serverTimestamp(),
-      }),
-    );
-
-    await assertFails(
-      updateDoc(doc(db, "payments", "pay1"), {
-        createdBy: MEMBER_UID,
-        updatedBy: ADMIN_UID,
-        updatedAt: serverTimestamp(),
-      }),
-    );
-
-    await assertSucceeds(deleteDoc(doc(db, "payments", "pay1")));
+    await assertFails(setDoc(doc(db, "payments", "pay1"), payment("kavita", ADMIN_UID)));
+    await assertFails(setDoc(doc(db, "payments", "pay2"), payment("rohan", ADMIN_UID)));
+    await assertFails(setDoc(doc(db, "payments", "pay3"), payment("suresh", ADMIN_UID)));
   });
 
-  it("writes an audit entry only for an admin, and never lets anyone edit it", async () => {
-    const db = adminDb();
-    await assertSucceeds(
-      setDoc(doc(db, "audit", "audit1"), {
-        action: "create",
-        entity: "payment",
-        entityId: "pay1",
-        actorUid: ADMIN_UID,
-        actorName: "Ananya Iyer",
-        summary: "Recorded ₹25,00,000 for Kavita Shah",
-        at: serverTimestamp(),
-      }),
-    );
-    await assertFails(
-      setDoc(doc(db, "audit", "audit-spoof"), {
-        action: "create",
-        entity: "payment",
-        entityId: "pay1",
-        actorUid: ADMIN_UID,
-        actorName: "Someone Else",
-        summary: "Spoofed",
-        at: serverTimestamp(),
-      }),
-    );
+  it("denies an unlinked account recording anything", async () => {
+    const db = unlinkedDb();
+    await assertFails(setDoc(doc(db, "payments", "pay1"), payment("kavita", UNLINKED_UID)));
+  });
+
+  it("requires createdBy and updatedBy to be the signer", async () => {
+    const db = memberDb();
+    await assertFails(setDoc(doc(db, "payments", "pay1"), payment("rohan", ADMIN_UID)));
+    await assertFails(setDoc(doc(db, "payments", "pay2"), payment("rohan", MEMBER_UID, { updatedBy: ADMIN_UID })));
+  });
+
+  it("rejects bad amounts, dates and extra fields", async () => {
+    const db = memberDb();
+    const bad: Array<Record<string, unknown>> = [
+      { amountPaise: 0 },
+      { amountPaise: -500 },
+      { amountPaise: 10.5 },
+      { amountPaise: "100000" },
+      { amountPaise: 10_000_000_001 },
+      { date: Timestamp.fromDate(new Date(Date.now() + 10 * 24 * HOURS)) },
+      { date: Timestamp.fromDate(new Date("1999-12-31T00:00:00Z")) },
+      { note: "x".repeat(501) },
+      { role: "admin" },
+    ];
+    for (const [index, overrides] of bad.entries()) {
+      await assertFails(setDoc(doc(db, "payments", `bad-${index}`), payment("rohan", MEMBER_UID, overrides)));
+    }
+  });
+});
+
+describe("editing and deleting payments", () => {
+  beforeEach(async () => {
+    await seedLedger();
+    await seedPayment("own-new", "rohan", MEMBER_UID, new Date(Date.now() - HOURS));
+    await seedPayment("own-old", "rohan", MEMBER_UID, new Date(Date.now() - 30 * HOURS));
+    await seedPayment("admin-new", "ananya", ADMIN_UID, new Date(Date.now() - HOURS));
+  });
+
+  function edit(db: Firestore, id: string, changes: Record<string, unknown>) {
+    return updateDoc(doc(db, "payments", id), { ...changes, updatedAt: serverTimestamp() });
+  }
+
+  it("lets the creator fix their own payment within 24 hours", async () => {
+    await assertSucceeds(edit(memberDb(), "own-new", { amountPaise: 260_000_000, note: "Fixed", updatedBy: MEMBER_UID }));
+  });
+
+  it("never lets the payer change who the payment is for, or who created it", async () => {
+    await assertFails(edit(memberDb(), "own-new", { personId: "kavita", updatedBy: MEMBER_UID }));
+    await assertFails(edit(memberDb(), "own-new", { createdBy: ADMIN_UID, updatedBy: MEMBER_UID }));
+  });
+
+  it("locks a payment after 24 hours, even for its creator", async () => {
+    await assertFails(edit(memberDb(), "own-old", { note: "late edit", updatedBy: MEMBER_UID }));
+    await assertFails(deleteDoc(doc(memberDb(), "payments", "own-old")));
+  });
+
+  it("denies editing or deleting someone else's payment, admin included", async () => {
+    await assertFails(edit(adminDb(), "own-new", { note: "admin edit", updatedBy: ADMIN_UID }));
+    await assertFails(deleteDoc(doc(adminDb(), "payments", "own-new")));
+    await assertFails(edit(memberDb(), "admin-new", { note: "member edit", updatedBy: MEMBER_UID }));
+    await assertFails(deleteDoc(doc(memberDb(), "payments", "admin-new")));
+    await assertFails(deleteDoc(doc(unlinkedDb(), "payments", "own-new")));
+  });
+
+  it("lets the creator delete their own recent payment", async () => {
+    await assertSucceeds(deleteDoc(doc(memberDb(), "payments", "own-new")));
+  });
+});
+
+describe("audit trail", () => {
+  beforeEach(async () => {
+    await seedLedger();
+  });
+
+  it("lets a member log their own payment in the same batch, and never edit the log", async () => {
+    const db = memberDb();
+    const batch = writeBatch(db);
+    batch.set(doc(db, "payments", "pay1"), payment("rohan", MEMBER_UID));
+    batch.set(doc(db, "audit", "audit1"), auditEntry());
+    await assertSucceeds(batch.commit());
+    await assertSucceeds(getDoc(doc(adminDb(), "audit", "audit1")));
     await assertFails(updateDoc(doc(db, "audit", "audit1"), { summary: "rewritten" }));
     await assertFails(deleteDoc(doc(db, "audit", "audit1")));
-    await assertFails(
-      setDoc(doc(memberDb(), "audit", "audit-member"), {
-        action: "create",
-        entity: "payment",
-        entityId: "pay1",
-        actorUid: MEMBER_UID,
-        actorName: "Rohan Mehta",
-        summary: "Member tried to write history",
-        at: serverTimestamp(),
-      }),
+    await assertFails(deleteDoc(doc(adminDb(), "audit", "audit1")));
+  });
+
+  it("logs a delete only when the payer's payment is really removed", async () => {
+    await seedPayment("pay1", "rohan", MEMBER_UID, new Date());
+    const db = memberDb();
+    await assertFails(setDoc(doc(db, "audit", "fake-delete"), auditEntry({ action: "delete" })));
+    const batch = writeBatch(db);
+    batch.delete(doc(db, "payments", "pay1"));
+    batch.set(doc(db, "audit", "audit-del"), auditEntry({ action: "delete" }));
+    await assertSucceeds(batch.commit());
+  });
+
+  it("rejects audit entries about other people's payments, spoofed names, or roster changes by members", async () => {
+    await seedPayment("pay-ananya", "ananya", ADMIN_UID, new Date());
+    const db = memberDb();
+    await assertFails(setDoc(doc(db, "audit", "a1"), auditEntry({ entityId: "pay-ananya", action: "update" })));
+    await assertFails(setDoc(doc(db, "audit", "a2"), auditEntry({ entityId: "missing" })));
+    await assertFails(setDoc(doc(db, "audit", "a3"), auditEntry({ entity: "person", entityId: "rohan", action: "update" })));
+    const batch = writeBatch(db);
+    batch.set(doc(db, "payments", "pay2"), payment("rohan", MEMBER_UID));
+    batch.set(doc(db, "audit", "a4"), auditEntry({ entityId: "pay2", actorName: "Someone Else" }));
+    await assertFails(batch.commit());
+  });
+
+  it("lets an admin log roster changes", async () => {
+    await assertSucceeds(
+      setDoc(
+        doc(adminDb(), "audit", "audit-person"),
+        auditEntry({ entity: "person", entityId: "kavita", action: "update", actorUid: ADMIN_UID, actorName: "Ananya Iyer", summary: "Updated Kavita" }),
+      ),
     );
-    await assertSucceeds(getDoc(doc(memberDb(), "audit", "audit1")));
+  });
+});
+
+describe("roster and linking (admin)", () => {
+  beforeEach(async () => {
+    await seedLedger();
   });
 
   it("lets an admin edit a person and blocks creates, deletes, and member edits", async () => {
@@ -272,8 +394,8 @@ describe("member read, admin write", () => {
         role: "contributor",
         color: "#c4a15a",
         sortOrder: 2,
-        linkedUid: MEMBER_UID,
-        linkedLabel: "Rohan Mehta",
+        linkedUid: UNLINKED_UID,
+        linkedLabel: "New Person",
       }),
     );
     await assertFails(setDoc(doc(db, "people", "seventh"), {
@@ -285,11 +407,7 @@ describe("member read, admin write", () => {
       linkedLabel: "",
     }));
     await assertFails(deleteDoc(doc(db, "people", "kavita")));
-    await assertFails(
-      updateDoc(doc(memberDb(), "people", "kavita"), {
-        name: "Taken",
-      }),
-    );
+    await assertFails(updateDoc(doc(memberDb(), "people", "kavita"), { name: "Taken" }));
     await assertFails(
       updateDoc(doc(db, "people", "kavita"), {
         name: "Kavita Shah",
@@ -300,6 +418,11 @@ describe("member read, admin write", () => {
         linkedLabel: "",
       }),
     );
+  });
+
+  it("never lets a member link themselves to a person", async () => {
+    await assertFails(updateDoc(doc(memberDb(), "users", MEMBER_UID), { personId: "kavita" }));
+    await assertFails(updateDoc(doc(unlinkedDb(), "users", UNLINKED_UID), { personId: "kavita" }));
   });
 });
 

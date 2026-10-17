@@ -8,7 +8,9 @@ Ownership is not split evenly. A contributor's share is:
 
 The homeowner's payments are stored, shown in the history, and counted in the total collected. They are excluded from the denominator, and the homeowner's share stays at **0%**. Amounts are stored as integer paise. Percentages use largest-remainder rounding so they add up to exactly 100% when anyone in the contributor pool has paid.
 
-Signed-in members can see every share and the full history. An admin (the first account, then anyone they add) can add, edit, and delete payments, edit the roster, and link logins to people. Every change writes an audit entry.
+Every account linked to a person on the roster can see every share and the full history, and records **only their own** payments (the pay flow is always "you"). Nobody, including the admin, can add money on someone else's behalf. You can fix or delete your own entry for 24 hours; after that it is permanent. An admin (the first account, then anyone they add) edits the roster and links logins to people. New sign-ups see "Ask the admin to link your account" until they are linked. Every change writes an audit entry.
+
+Gestures: swipe left/right anywhere on a page to move between History, Ledger and People (the bottom-bar pill follows your finger), and pull down from the top of the ledger to open the pay flow.
 
 ## Download
 
@@ -90,14 +92,14 @@ pnpm lint
 pnpm exec tsc --noEmit
 pnpm test          # share math, formatting, rounding
 pnpm test:rules    # Firestore rules against the emulator
-pnpm test:e2e      # Playwright: login, admin payment, member sees shares
+pnpm test:e2e      # Playwright: own-only payments, unlinked sign-up, swipe tabs + pull to pay
 ```
 
 Rules and end-to-end tests start the emulators themselves. Java must be on `PATH`.
 
 ## Security rules
 
-These are prototype rules. Members (a `users/{uid}` profile) can read the ledger. Only uids in `settings/access.adminUids` can write. The first account can create that admin list if it does not exist yet; later admins can add others but cannot remove themselves in the same write. User emails are readable by that user and by admins, not by every member. Nothing is world-readable. Review `firestore.rules` before you point this at a real project.
+`firestore.rules` is the source of truth for who can do what. An account is *linked* when `users/{uid}.personId` names a person whose `linkedUid` is that uid (both directions). Linked accounts and admins can read people, payments and the audit trail; unlinked accounts cannot. A payment can only be created with `personId` equal to your own linked person and `createdBy` equal to you, with a positive whole-paise amount (max ₹10 Cr) and a sane date; edits and deletes are limited to the creator for 24 hours, and every payment write must carry a matching audit entry in the same batch. Admins (`settings/access.adminUids`) manage the roster, links and admin list, but get no extra payment powers. The first account can create that admin list if it does not exist yet; later admins can add others but cannot remove themselves in the same write. User emails are readable by that user and by admins, not by every member. Nothing is world-readable. Review `firestore.rules` before you point this at a real project.
 
 ## Plug in a real Firebase project
 

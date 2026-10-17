@@ -56,7 +56,8 @@ export function PeopleView() {
         <h1 className="font-heading text-3xl">People</h1>
         <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
           Five contributors and one homeowner. Accounts sign up on their own, then an admin links each login to a
-          person. Everyone signed in can see this roster.
+          person. Linked people see the whole ledger and record only their own payments; the admin manages
+          the roster and links, never payments for someone else.
         </p>
       </header>
       <motion.ul variants={listVariants} initial="hidden" animate="show" className="grid gap-3">

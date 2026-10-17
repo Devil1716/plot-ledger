@@ -11,7 +11,7 @@ import {
   useReducedMotion,
   useTransform,
 } from "motion/react";
-import { ArrowLeft, ChevronDown, Delete } from "lucide-react";
+import { ArrowLeft, Delete, X } from "lucide-react";
 import { NATIVE_BACK_EVENT } from "@/components/native-shell";
 import { SlideToConfirm, type SlideStatus } from "@/components/slide-to-confirm";
 import { authErrorMessage, useLedger } from "@/components/ledger-provider";
@@ -20,7 +20,6 @@ import { firebaseReady } from "@/lib/firebase";
 import { haptic } from "@/lib/native";
 import {
   collectedPaise,
-  formatInrCompactFromPaise,
   formatInrFromPaise,
   parseIsoDate,
   TARGET_PAISE,
@@ -41,7 +40,7 @@ import {
 import type { PersonRecord } from "@/lib/records";
 import { createPayment } from "@/lib/writes";
 
-type Step = "pick" | "amount" | "success";
+type Step = "amount" | "success";
 const MINT = "#34d399";
 const INK = "#0f1524";
 
@@ -69,11 +68,11 @@ export function PayFlow({ open, onClose }: { open: boolean; onClose: () => void 
 }
 
 function PayFlowInner({ onClose }: { onClose: () => void }) {
-  const { people, payments, shares, profile } = useLedger();
-  const [step, setStep] = useState<Step>("pick");
-  const [personId, setPersonId] = useState<string | null>(null);
+  const { people, payments, shares, profile, myPersonId } = useLedger();
+  const [step, setStep] = useState<Step>("amount");
   const [savedPaise, setSavedPaise] = useState<bigint>(0n);
-  const person = people.find((item) => item.id === personId) ?? null;
+  // You can only ever pay for yourself (Firestore rules enforce the same).
+  const person = people.find((item) => item.id === myPersonId) ?? null;
 
   useEffect(() => {
     const previous = document.body.style.overflow;
@@ -83,12 +82,11 @@ function PayFlowInner({ onClose }: { onClose: () => void }) {
     };
   }, []);
 
-  // Android back / Escape: amount sheet → who paid → close
+  // Android back / Escape closes the flow
   useEffect(() => {
     const goBack = (event: Event) => {
       event.preventDefault();
-      if (step === "amount") setStep("pick");
-      else onClose();
+      onClose();
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") goBack(event);
@@ -99,7 +97,7 @@ function PayFlowInner({ onClose }: { onClose: () => void }) {
       window.removeEventListener(NATIVE_BACK_EVENT, goBack);
       window.removeEventListener("keydown", onKey);
     };
-  }, [onClose, step]);
+  }, [onClose]);
 
   const paidBy = useCallback(
     (id: string) => shares.find((share) => share.personId === id)?.amountPaise ?? 0,
@@ -135,50 +133,12 @@ function PayFlowInner({ onClose }: { onClose: () => void }) {
           </motion.button>
           <span className="text-xs text-white/60">{formatInrFromPaise(remaining)} left to raise</span>
         </div>
-        <h1 className="mt-6 text-3xl font-semibold tracking-tight">Who paid?</h1>
-        <p className="mt-1 text-sm text-white/65">Pick a person, then enter the amount.</p>
-        <ul className="mt-6 grid grid-cols-2 gap-3 overflow-y-auto pb-8">
-          {people.map((item, index) => {
-            const share = shares.find((row) => row.personId === item.id);
-            return (
-              <motion.li
-                key={item.id}
-                initial={{ opacity: 0, y: 24 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, ease: EASE_OUT, delay: 0.12 + index * 0.04 }}
-              >
-                <motion.button
-                  whileTap={{ scale: 1.07 }}
-                  whileHover={{ y: -4 }}
-                  type="button"
-                  data-testid={`pay-person-${item.id}`}
-                  aria-label={`${item.name}, ${item.role === "homeowner" ? "homeowner" : "contributor"}`}
-                  onClick={() => {
-                    setPersonId(item.id);
-                    setStep("amount");
-                  }}
-                  className="glass flex w-full flex-col items-center gap-2 rounded-3xl px-3 py-5 text-center focus-visible:outline-2 focus-visible:outline-white"
-                >
-                  {/* plain element: a shared layoutId here made motion measure the whole
-                      page on every frame of the transition, which stuttered on phones */}
-                  <span
-                    aria-hidden
-                    className="grid size-16 place-items-center rounded-full text-lg font-semibold text-[#0b0f1a]"
-                    style={{ background: item.color }}
-                  >
-                    {initialsOf(item.name)}
-                  </span>
-                  <span className="text-sm font-semibold">{item.name}</span>
-                  <span className="text-xs text-white/60">
-                    {item.role === "homeowner"
-                      ? "Homeowner · 0% share"
-                      : `Contributor · ${formatInrCompactFromPaise(share?.amountPaise ?? 0)} paid`}
-                  </span>
-                </motion.button>
-              </motion.li>
-            );
-          })}
-        </ul>
+        {person ? null : (
+          <div className="mt-10 text-center" data-testid="pay-needs-link">
+            <h1 className="text-2xl font-semibold tracking-tight">Ask the admin to link your account</h1>
+            <p className="mt-2 text-sm text-white/65">Payments can only be recorded for your own roster entry.</p>
+          </div>
+        )}
       </div>
 
       <AnimatePresence>
@@ -186,9 +146,9 @@ function PayFlowInner({ onClose }: { onClose: () => void }) {
           <AmountSheet
             key="sheet"
             person={person}
+            onClose={onClose}
             paidPaise={paidBy(person.id)}
             remainingPaise={remaining}
-            onSwitchPerson={() => setStep("pick")}
             onSave={async (paise, date, note) => {
               if (!profile) throw new Error("Your profile is still loading.");
               const { db } = await firebaseReady();
@@ -239,16 +199,16 @@ function AmountSheet({
   person,
   paidPaise,
   remainingPaise,
-  onSwitchPerson,
   onSave,
   onSuccess,
+  onClose,
 }: {
   person: PersonRecord;
   paidPaise: number;
   remainingPaise: number;
-  onSwitchPerson: () => void;
   onSave: (paise: bigint, date: Date, note: string) => Promise<void>;
   onSuccess: () => void;
+  onClose: () => void;
 }) {
   const reduce = useReducedMotion();
   const [state, setState] = useState<KeypadState>(EMPTY_KEYPAD);
@@ -358,14 +318,21 @@ function AmountSheet({
     >
       <div className="mx-auto flex h-full w-full max-w-md flex-col px-5 pt-3 pb-[calc(5rem+var(--safe-bottom))]">
         <div aria-hidden className="mx-auto h-1 w-10 rounded-full bg-[#d5d9e2]" />
-        <div className="mt-3 flex justify-center">
+        <div className="relative mt-3 flex justify-center">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            data-testid="pay-close"
+            className="absolute top-1/2 left-0 grid size-10 -translate-y-1/2 place-items-center rounded-full text-[var(--muted-foreground)] hover:bg-[var(--muted)] focus-visible:outline-2 focus-visible:outline-[var(--ring)]"
+          >
+            <X className="size-5" aria-hidden />
+          </button>
           <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold ring-1 ring-[var(--border)]">Payment</span>
         </div>
-        <button
-          type="button"
-          onClick={onSwitchPerson}
-          className="mx-auto mt-2 flex items-center gap-1 rounded-full px-2 py-1 text-xs text-[var(--muted-foreground)] hover:bg-[var(--muted)] focus-visible:outline-2 focus-visible:outline-[var(--ring)]"
-          data-testid="pay-switch-person"
+        <p
+          className="mx-auto mt-2 flex items-center gap-1 rounded-full px-2 py-1 text-xs text-[var(--muted-foreground)]"
+          data-testid="pay-as"
         >
           <span
             aria-hidden
@@ -374,9 +341,8 @@ function AmountSheet({
           >
             {initialsOf(person.name)}
           </span>
-          {person.name.split(" ")[0]} · {formatInrFromPaise(paidPaise)} paid so far
-          <ChevronDown className="size-3.5" aria-hidden />
-        </button>
+          You ({person.name.split(" ")[0]}) · {formatInrFromPaise(paidPaise)} paid so far
+        </p>
 
         {/* amount */}
         <div className="relative mt-4 flex flex-1 flex-col items-center justify-center select-none" data-testid="pay-swipe-area">

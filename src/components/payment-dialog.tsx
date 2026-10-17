@@ -13,7 +13,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { authErrorMessage, useLedger } from "@/components/ledger-provider";
 import { firebaseReady } from "@/lib/firebase";
@@ -46,8 +45,10 @@ export function PaymentDialog({
 }
 
 function PaymentForm({ payment, onDone }: { payment: PaymentRecord | null; onDone: () => void }) {
-  const { people, profile } = useLedger();
-  const [personId, setPersonId] = useState(payment?.personId ?? people[0]?.id ?? "");
+  const { people, profile, myPersonId } = useLedger();
+  // Payments are only ever recorded for the signed-in person (enforced by Firestore rules).
+  const personId = payment?.personId ?? myPersonId ?? "";
+  const personName = people.find((person) => person.id === personId)?.name ?? "You";
   const [amount, setAmount] = useState(payment ? formatInrFromPaise(payment.amountPaise) : "");
   const [date, setDate] = useState(payment ? formatIsoDate(payment.date) : new Date().toISOString().slice(0, 10));
   const [note, setNote] = useState(payment?.note ?? "");
@@ -59,7 +60,7 @@ function PaymentForm({ payment, onDone }: { payment: PaymentRecord | null; onDon
     const amountPaise = parseRupeesToPaise(amount);
     const parsedDate = parseIsoDate(date);
     if (!personId) {
-      setError("Choose who paid.");
+      setError("Ask the admin to link your account before recording payments.");
       return;
     }
     if (amountPaise === null) {
@@ -105,20 +106,10 @@ function PaymentForm({ payment, onDone }: { payment: PaymentRecord | null; onDon
       </DialogHeader>
       <div className="mt-4 grid gap-3">
         <div className="grid gap-1.5">
-          <Label htmlFor="payment-person">Person</Label>
-          <Select value={personId} onValueChange={(value) => setPersonId(value ?? "")}>
-            <SelectTrigger id="payment-person" data-testid="payment-person" className="h-11 w-full">
-              <SelectValue placeholder="Who paid" />
-            </SelectTrigger>
-            <SelectContent>
-              {people.map((person) => (
-                <SelectItem key={person.id} value={person.id}>
-                  {person.name}
-                  {person.role === "homeowner" ? " · Homeowner" : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Label htmlFor="payment-person">Paid by</Label>
+          <p id="payment-person" data-testid="payment-person" className="flex h-11 items-center rounded-lg bg-muted px-3 text-sm font-medium">
+            {personName} (you)
+          </p>
         </div>
         <div className="grid gap-1.5">
           <Label htmlFor="payment-amount">Amount (INR)</Label>

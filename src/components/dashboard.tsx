@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { memo, useState } from "react";
+import { memo, useCallback, useState } from "react";
 import { BookOpenText, Plus } from "lucide-react";
 import { PayFlow } from "@/components/pay-flow";
+import { PullToPay } from "@/components/pull-to-pay";
+import { useTabActive } from "@/components/tab-active";
 import { SharesPanel } from "@/components/shares-panel";
 import { useLedger } from "@/components/ledger-provider";
 import { CountUp, EASE_OUT, itemVariants, listVariants, motion, popVariants, tap } from "@/components/motion-bits";
@@ -47,8 +49,11 @@ function Avatar({ name, color, size = "md" }: { name: string; color: string; siz
 const SharesPanelMemo = memo(SharesPanel);
 
 export function Dashboard() {
-  const { people, payments, shares, profile, isAdmin, dataReady } = useLedger();
+  const { people, payments, shares, profile, myPersonId, dataReady } = useLedger();
+  const canPay = myPersonId !== null;
   const [open, setOpen] = useState(false);
+  const tabActive = useTabActive();
+  const openPay = useCallback(() => setOpen(true), []);
   const collected = collectedPaise(payments.map((payment) => ({ personId: payment.personId, amountPaise: payment.amountPaise })));
   const progress = targetProgress(collected);
   const contributorPool = shares
@@ -86,7 +91,7 @@ export function Dashboard() {
   }
 
   return (
-    <>
+    <PullToPay enabled={canPay && tabActive && !open} onTrigger={openPay}>
     <motion.div
       className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)] lg:items-start"
       animate={open ? { x: "-28%", scale: 0.94, opacity: 0.55 } : { x: 0, scale: 1, opacity: 1 }}
@@ -166,7 +171,7 @@ export function Dashboard() {
         </p>
 
         <div className="mt-5 flex flex-wrap gap-2">
-          {isAdmin ? (
+          {canPay ? (
             <motion.button
               {...tap}
               type="button"
@@ -181,7 +186,7 @@ export function Dashboard() {
             </motion.button>
           ) : (
             <span className="flex h-10 items-center rounded-full bg-white/10 px-4 text-sm font-medium ring-1 ring-white/15">
-              Read only
+              Not linked · view only
             </span>
           )}
           <motion.div {...tap} className="rounded-full">
@@ -252,15 +257,15 @@ export function Dashboard() {
             <span aria-hidden className="grid size-12 place-items-center rounded-full bg-[#34d399]/15 text-xl">₹</span>
             <p className="text-base font-medium">No payments yet</p>
             <p className="text-sm text-[var(--muted-foreground)]">
-              Every share stays at 0% until {isAdmin ? "you record" : "an admin records"} the first payment.
+              Every share stays at 0% until the first payment is recorded.
             </p>
-            {isAdmin ? (
+            {canPay ? (
               <button
                 type="button"
                 onClick={() => setOpen(true)}
                 className="h-12 rounded-full bg-[#0b0f1a] px-6 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-[var(--ring)]"
               >
-                Record the first payment
+                Record your first payment
               </button>
             ) : null}
           </div>
@@ -297,6 +302,6 @@ export function Dashboard() {
       </motion.section>
     </motion.div>
     <PayFlow open={open} onClose={() => setOpen(false)} />
-    </>
+    </PullToPay>
   );
 }

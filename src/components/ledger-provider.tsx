@@ -40,6 +40,10 @@ interface LedgerContextValue {
   user: User | null;
   profile: UserRecord | null;
   isAdmin: boolean;
+  /** Roster person linked to this account (both ways), or null. Payments can only be made for this person. */
+  myPersonId: string | null;
+  /** Signed in, but no admin has linked this account to a roster person yet. */
+  needsLink: boolean;
   adminUids: string[];
   accessCreatedAt: Timestamp | null;
   people: PersonRecord[];
@@ -90,6 +94,8 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [audit, setAudit] = useState<AuditRecord[]>([]);
   const [accounts, setAccounts] = useState<UserRecord[]>([]);
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  const [accessLoaded, setAccessLoaded] = useState(false);
 
   useEffect(() => {
     let generation = 0;
@@ -108,6 +114,8 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
           stopData();
           setDataReady(false);
           setAccounts([]);
+          setProfileLoaded(false);
+          setAccessLoaded(false);
           if (!nextUser) {
             setUser(null);
             setProfile(null);
@@ -129,11 +137,6 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
               if (current !== generation) return;
               setUser(nextUser);
               setError(null);
-              const loaded = new Set<string>();
-              const mark = (key: string) => {
-                loaded.add(key);
-                if (loaded.size >= 3) setDataReady(true);
-              };
               const fail = (snapshotError: unknown) => {
                 if (current !== generation) return;
                 setError(errorMessage(snapshotError));
@@ -143,7 +146,10 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
               unsubs.push(
                 onSnapshot(
                   doc(db, "users", nextUser.uid),
-                  (snap) => setProfile(parseUser(nextUser.uid, snap.data())),
+                  (snap) => {
+                    setProfile(parseUser(nextUser.uid, snap.data()));
+                    setProfileLoaded(true);
+                  },
                   fail,
                 ),
               );
@@ -159,51 +165,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
                     setAccessCreatedAt(
                       data?.createdAt && typeof data.createdAt === "object" ? (data.createdAt as Timestamp) : null,
                     );
-                  },
-                  fail,
-                ),
-              );
-              unsubs.push(
-                onSnapshot(
-                  collection(db, "people"),
-                  (snap) => {
-                    setPeople(
-                      snap.docs
-                        .map((item) => parsePerson(item.id, item.data()))
-                        .filter((item): item is PersonRecord => item !== null)
-                        .sort((a, b) => a.sortOrder - b.sortOrder),
-                    );
-                    mark("people");
-                  },
-                  fail,
-                ),
-              );
-              unsubs.push(
-                onSnapshot(
-                  collection(db, "payments"),
-                  (snap) => {
-                    setPayments(
-                      snap.docs
-                        .map((item) => parsePayment(item.id, item.data()))
-                        .filter((item): item is PaymentRecord => item !== null)
-                        .sort((a, b) => b.date.getTime() - a.date.getTime()),
-                    );
-                    mark("payments");
-                  },
-                  fail,
-                ),
-              );
-              unsubs.push(
-                onSnapshot(
-                  collection(db, "audit"),
-                  (snap) => {
-                    setAudit(
-                      snap.docs
-                        .map((item) => parseAudit(item.id, item.data()))
-                        .filter((item): item is AuditRecord => item !== null)
-                        .sort((a, b) => b.at.getTime() - a.at.getTime()),
-                    );
-                    mark("audit");
+                    setAccessLoaded(true);
                   },
                   fail,
                 ),
@@ -230,6 +192,83 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const isAdmin = Boolean(user && adminUids.includes(user.uid));
+  // Firestore rules only let linked accounts (and admins) read the ledger, so wait for
+  // the profile before subscribing; an unlinked account would only get permission errors.
+  const uid = user?.uid ?? null;
+  const linkedPersonId = profile?.personId ?? null;
+  const canRead = status === "ready" && profileLoaded && accessLoaded && (linkedPersonId !== null || isAdmin);
+  const needsLink = status === "ready" && profileLoaded && accessLoaded && linkedPersonId === null && !isAdmin;
+
+  useEffect(() => {
+    if (!canRead || !uid) return;
+    let cancelled = false;
+    const unsubs: Array<() => void> = [];
+    const loaded = new Set<string>();
+    const mark = (key: string) => {
+      loaded.add(key);
+      if (loaded.size >= 3 && !cancelled) setDataReady(true);
+    };
+    const fail = (snapshotError: unknown) => {
+      if (cancelled) return;
+      setError(errorMessage(snapshotError));
+      setStatus("error");
+    };
+    void firebaseReady().then(({ db }) => {
+      if (cancelled) return;
+      unsubs.push(
+        onSnapshot(
+          collection(db, "people"),
+          (snap) => {
+            setPeople(
+              snap.docs
+                .map((item) => parsePerson(item.id, item.data()))
+                .filter((item): item is PersonRecord => item !== null)
+                .sort((a, b) => a.sortOrder - b.sortOrder),
+            );
+            mark("people");
+          },
+          fail,
+        ),
+        onSnapshot(
+          collection(db, "payments"),
+          (snap) => {
+            setPayments(
+              snap.docs
+                .map((item) => parsePayment(item.id, item.data()))
+                .filter((item): item is PaymentRecord => item !== null)
+                .sort((a, b) => b.date.getTime() - a.date.getTime()),
+            );
+            mark("payments");
+          },
+          fail,
+        ),
+        onSnapshot(
+          collection(db, "audit"),
+          (snap) => {
+            setAudit(
+              snap.docs
+                .map((item) => parseAudit(item.id, item.data()))
+                .filter((item): item is AuditRecord => item !== null)
+                .sort((a, b) => b.at.getTime() - a.at.getTime()),
+            );
+            mark("audit");
+          },
+          fail,
+        ),
+      );
+    });
+    return () => {
+      cancelled = true;
+      while (unsubs.length > 0) unsubs.pop()?.();
+      setDataReady(false);
+    };
+  }, [canRead, uid, linkedPersonId]);
+
+  const myPersonId = useMemo(() => {
+    if (!uid || !linkedPersonId) return null;
+    const person = people.find((item) => item.id === linkedPersonId);
+    return person && person.linkedUid === uid ? person.id : null;
+  }, [linkedPersonId, people, uid]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -269,6 +308,8 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       user,
       profile,
       isAdmin,
+      myPersonId,
+      needsLink,
       adminUids,
       accessCreatedAt,
       people,
@@ -309,6 +350,8 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       dataReady,
       error,
       isAdmin,
+      myPersonId,
+      needsLink,
       payments,
       people,
       profile,

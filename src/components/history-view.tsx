@@ -19,9 +19,11 @@ import { firebaseReady } from "@/lib/firebase";
 import { formatInrFromPaise, formatLedgerDate } from "@/lib/ledger-math";
 import type { PaymentRecord } from "@/lib/records";
 import { deletePayment } from "@/lib/writes";
+import { canEditPayment, editTimeLeft } from "@/lib/permissions";
 
 export function HistoryView() {
-  const { payments, people, audit, isAdmin, profile, dataReady } = useLedger();
+  const { payments, people, audit, profile, myPersonId, dataReady } = useLedger();
+  const [now] = useState(() => Date.now());
   const [filter, setFilter] = useState<string>("all");
   const [editing, setEditing] = useState<PaymentRecord | null>(null);
   const [removing, setRemoving] = useState<PaymentRecord | null>(null);
@@ -51,7 +53,7 @@ export function HistoryView() {
         <div>
           <h1 className="font-heading text-3xl">Payment history</h1>
           <p className="text-muted-foreground mt-1 max-w-xl text-sm">
-            Every rupee is listed, including the homeowner. Edits and deletions stay in the audit trail.
+            Every rupee is listed, including the homeowner. You can fix or remove your own entry for 24 hours; after that it is permanent. Every change stays in the audit trail.
           </p>
         </div>
       </header>
@@ -69,7 +71,7 @@ export function HistoryView() {
         <section className="bg-card rounded-xl p-6 ring-1 ring-foreground/10">
           <h2 className="font-heading text-xl">No payments yet</h2>
           <p className="text-muted-foreground mt-1 text-sm">
-            When an admin records a payment, it shows up here for everyone who is signed in.
+            When anyone records their own payment, it shows up here for everyone on the roster.
           </p>
         </section>
       ) : (
@@ -89,7 +91,8 @@ export function HistoryView() {
                     <p className="text-muted-foreground text-sm">{formatLedgerDate(payment.date)}</p>
                     {payment.note ? <p className="mt-2 text-sm">{payment.note}</p> : null}
                   </div>
-                  {isAdmin ? (
+                  {canEditPayment(payment, profile?.uid, myPersonId, now) ? (
+                    <div className="flex flex-col items-end gap-1.5">
                     <div className="flex gap-2">
                       <Button variant="outline" size="sm" onClick={() => setEditing(payment)}>
                         Edit
@@ -97,6 +100,10 @@ export function HistoryView() {
                       <Button variant="destructive" size="sm" onClick={() => setRemoving(payment)}>
                         Delete
                       </Button>
+                    </div>
+                    <span className="text-muted-foreground text-xs">
+                      Editable for {Math.max(1, Math.ceil(editTimeLeft(payment, now) / 3_600_000))}h more
+                    </span>
                     </div>
                   ) : null}
                 </div>
