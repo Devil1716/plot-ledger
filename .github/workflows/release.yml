@@ -182,13 +182,48 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
           SHA: ${{ steps.apk.outputs.sha }}
         run: |
-          printf 'Plot Ledger %s.\n\nInstalled apps update themselves: web-only changes apply on the next launch; native changes download in the app and open Android'"'"'s installer.\n\nAPK SHA-256: `%s`\n' "$TAG" "$SHA" > notes.md
+          printf 'Plot Ledger %s.\n\nInstalled apps update themselves: web-only changes download in the background and apply automatically (at the next quiet moment or launch); native changes download in the app and open Android'"'"'s installer.\n\nAPK SHA-256: `%s`\n' "$TAG" "$SHA" > notes.md
           gh release create "$TAG" plot-ledger.apk plot-ledger-web.zip update.json \
             --target "$GITHUB_SHA" \
             --title "Plot Ledger $TAG" \
             --notes-file notes.md \
             --generate-notes \
             --latest
+
+      - name: Verify the published OTA manifest matches this release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          WANT="${TAG#v}"
+          BUILD=$(node -p "require('./package.json').nativeBuild")
+          mkdir -p verify && cd verify
+          # what installed apps see: the releases API's latest release → its update.json
+          for i in 1 2 3 4 5 6; do
+            LATEST=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+            [ "$LATEST" = "$TAG" ] && break
+            echo "latest is still $LATEST, waiting…"; sleep 10
+          done
+          [ "$LATEST" = "$TAG" ] || { echo "::error::releases/latest is $LATEST, not $TAG"; exit 1; }
+          URL=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.assets[] | select(.name=="update.json") | .browser_download_url')
+          curl -fsSL --retry 5 "$URL" -o update.json
+          cat update.json
+          WANT="$WANT" BUILD="$BUILD" TAG="$TAG" node -e '
+            const m = require("./update.json");
+            const fail = (msg) => { console.error("::error::" + msg); process.exit(1); };
+            if (m.version !== process.env.WANT) fail(`manifest version ${m.version} != ${process.env.WANT}`);
+            if (m.nativeBuild !== Number(process.env.BUILD)) fail(`manifest nativeBuild ${m.nativeBuild} != ${process.env.BUILD}`);
+            if (!m.bundle.url.includes(`/download/${process.env.TAG}/`)) fail(`bundle url ${m.bundle.url} is not for ${process.env.TAG}`);
+          '
+          BUNDLE_URL=$(node -p "require('./update.json').bundle.url")
+          BUNDLE_SHA=$(node -p "require('./update.json').bundle.sha256")
+          curl -fsSL --retry 5 "$BUNDLE_URL" -o web.zip
+          echo "$BUNDLE_SHA  web.zip" | sha256sum -c -
+          unzip -q web.zip -d web
+          test -f web/index.html || { echo "::error::bundle has no index.html at its root"; exit 1; }
+          grep -rqF "\"$WANT\"" web/_next || { echo "::error::bundle does not carry version $WANT"; exit 1; }
+          echo "OTA manifest, bundle checksum and baked-in version all match $TAG"
 
   firestore-rules:
     name: Deploy Firestore rules (optional)

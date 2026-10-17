@@ -6,7 +6,7 @@ import { Download, ShieldCheck, X } from "lucide-react";
 import { App } from "@capacitor/app";
 import { CapacitorHttp } from "@capacitor/core";
 import { nativePlatform } from "@/lib/native";
-import { BUNDLE_VERSION, MANIFEST_URL, parseManifest, planUpdate, UPDATE_REPO, type UpdatePlan } from "@/lib/app-update";
+import { BUNDLE_NATIVE_BUILD, BUNDLE_VERSION, MANIFEST_URL, parseManifest, planUpdate, UPDATE_REPO, type UpdatePlan } from "@/lib/app-update";
 import { ApkUpdater } from "@/lib/apk-updater";
 import { toast } from "sonner";
 
@@ -16,7 +16,7 @@ type ApkState =
   | { phase: "needs-permission"; path: string }
   | { phase: "failed"; message: string };
 
-const CHECK_GAP_MS = 10 * 60 * 1000;
+const CHECK_GAP_MS = 60 * 1000;
 const SEEN_KEY = "plotledger:last-version";
 let coldStartApplied = false;
 
@@ -36,6 +36,8 @@ function announceNewVersion(runningOtaBundle: boolean) {
 export const UPDATE_STATUS_KEY = "plotledger:update-status";
 
 function noteStatus(result: string) {
+  // shows up in `adb logcat` as Capacitor/Console, so device behaviour can be checked
+  console.info(`[ota] v${BUNDLE_VERSION} build ${BUNDLE_NATIVE_BUILD}: ${result}`);
   try {
     localStorage.setItem(UPDATE_STATUS_KEY, JSON.stringify({ at: new Date().toISOString(), result }));
   } catch {
@@ -96,11 +98,27 @@ async function fetchManifest() {
   return manifest;
 }
 
+/** Resolves once the user isn't mid-task: no open dialog / pay flow and no focused input. */
+async function waitUntilIdle(stop: () => boolean): Promise<void> {
+  const busyNow = () =>
+    Boolean(
+      document.querySelector('[data-testid="pay-flow"], [role="dialog"]:not([data-testid="update-prompt"]), [role="alertdialog"]') ||
+        (document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)),
+    );
+  let quietSince = busyNow() ? 0 : Date.now();
+  while (!stop()) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    if (busyNow()) quietSince = 0;
+    else if (!quietSince) quietSince = Date.now();
+    else if (Date.now() - quietSince >= 1500) return;
+  }
+}
+
 /**
  * Android app only. On launch / resume:
  *  - tells the OTA updater this bundle booted (otherwise it rolls back to the previous one),
  *  - reads the latest release's update.json,
- *  - web-only update: downloads the bundle silently; it applies the next time the app starts,
+ *  - web-only update: downloads the bundle silently and swaps it in as soon as the user is idle,
  *  - native update: downloads the APK with progress and opens Android's installer.
  */
 export function UpdatePrompt() {
@@ -172,7 +190,14 @@ export function UpdatePrompt() {
             existing ??
             (await CapacitorUpdater.download({ url: plan.bundle.url, version: plan.version, checksum: plan.bundle.sha256 }));
           await CapacitorUpdater.next({ id: bundle.id });
-          noteStatus(`web update ${plan.version} downloaded; applies on next launch`);
+          noteStatus(`web update ${plan.version} downloaded; applying`);
+          // Don't wait for a background/relaunch (people rarely kill the app): swap the
+          // bundle in now, as soon as nothing is open (no pay flow, dialog or typing).
+          await waitUntilIdle(() => cancelled);
+          if (!cancelled) {
+            noteStatus(`applying web update ${plan.version} now`);
+            await CapacitorUpdater.set({ id: bundle.id });
+          }
         }
       } catch (error) {
         // offline / GitHub hiccup: try again next launch
@@ -190,11 +215,13 @@ export function UpdatePrompt() {
         noteStatus("starting…");
         const ready = await withTimeout(CapacitorUpdater.notifyAppReady(), 5000, "notifyAppReady timed out");
         runningOta = ready.bundle.id !== "builtin";
+        noteStatus(`booted bundle ${ready.bundle.id} (${ready.bundle.version})`);
         // A bundle downloaded last time is normally swapped in when the app goes to the
         // background. If the app was killed instead, apply it now, on this cold start.
         const next = await withTimeout(CapacitorUpdater.getNextBundle(), 5000, "getNextBundle timed out");
         if (next && next.id !== ready.bundle.id && next.status !== "error" && !coldStartApplied) {
           coldStartApplied = true;
+          noteStatus(`cold start: applying downloaded ${next.version}`);
           await CapacitorUpdater.set({ id: next.id });
           return;
         }

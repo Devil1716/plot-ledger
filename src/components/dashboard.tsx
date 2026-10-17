@@ -2,14 +2,13 @@
 
 import Link from "next/link";
 import { memo, useCallback, useState } from "react";
-import { BookOpenText } from "lucide-react";
 import { PayFlow } from "@/components/pay-flow";
 import { PullToPay } from "@/components/pull-to-pay";
 import { useTabActive } from "@/components/tab-active";
 import { SharesPanel } from "@/components/shares-panel";
 import { Avatar as PersonAvatar } from "@/components/avatar";
 import { useLedger } from "@/components/ledger-provider";
-import { CountUp, EASE_OUT, motion, popVariants, tap } from "@/components/motion-bits";
+import { CountUp, EASE_OUT, motion, popVariants } from "@/components/motion-bits";
 import {
   collectedPaise,
   formatInrCompactFromPaise,
@@ -182,15 +181,6 @@ export function Dashboard() {
               Not linked · view only
             </span>
           )}
-          <motion.div {...tap} className="rounded-full">
-          <Link
-            href="/history"
-            className="flex h-10 items-center gap-2 rounded-full bg-white/10 px-4 text-sm font-medium ring-1 ring-white/15 hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-white"
-          >
-            <BookOpenText className="size-4" aria-hidden />
-            History
-          </Link>
-          </motion.div>
         </div>
 
         <div className="glass mt-6 flex items-center justify-between gap-3 rounded-3xl p-4">

@@ -54,6 +54,7 @@ test("everyone pays only for themselves and sees everyone's shares", async ({ br
   await expect(adminPage.getByTestId("recent-payments")).toHaveCount(0);
   await expect(adminPage.getByText("Recent payments")).toHaveCount(0);
   await expect(adminPage.getByRole("button", { name: "Add payment" })).toHaveCount(0);
+  await expect(adminPage.getByRole("main").getByRole("link", { name: "History" })).toHaveCount(0);
 
   // the admin is linked to Ananya and can only record Ananya's money
   await payForMyself(adminPage, "Ananya", "25,00,000", "2026-04-11", "Twenty-five lakh");
