@@ -102,7 +102,10 @@ async function fetchManifest() {
 async function waitUntilIdle(stop: () => boolean): Promise<void> {
   const busyNow = () =>
     Boolean(
-      document.querySelector('[data-testid="pay-flow"], [role="dialog"]:not([data-testid="update-prompt"]), [role="alertdialog"]') ||
+      // never on the sign-in page: a reload there could drop an in-flight Google sign-in
+      /^\/login/.test(window.location.pathname) ||
+        document.documentElement.dataset.signingIn === "1" ||
+        document.querySelector('[data-testid="pay-flow"], [role="dialog"]:not([data-testid="update-prompt"]), [role="alertdialog"]') ||
         (document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)),
     );
   let quietSince = busyNow() ? 0 : Date.now();
@@ -189,6 +192,13 @@ export function UpdatePrompt() {
           const bundle =
             existing ??
             (await CapacitorUpdater.download({ url: plan.bundle.url, version: plan.version, checksum: plan.bundle.sha256 }));
+          // Queuing it as "next" makes the updater swap bundles whenever the app is backgrounded,
+          // and Google's account picker backgrounds the app: never queue it on the sign-in page.
+          if (/^\/login/.test(window.location.pathname) || document.documentElement.dataset.signingIn === "1") {
+            noteStatus(`web update ${plan.version} downloaded; waiting until after sign-in`);
+            lastCheck.current = 0; // try again on the next resume
+            return;
+          }
           await CapacitorUpdater.next({ id: bundle.id });
           noteStatus(`web update ${plan.version} downloaded; applying`);
           // Don't wait for a background/relaunch (people rarely kill the app): swap the

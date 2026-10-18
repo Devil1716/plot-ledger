@@ -28,13 +28,21 @@ export function LoginForm() {
     setBusy(true);
     setError(null);
     markEntryPending();
+    // keeps the OTA updater from reloading the app while Google's picker is open
+    document.documentElement.dataset.signingIn = "1";
     try {
       await action();
     } catch (signInError) {
       const message = authErrorMessage(signInError);
-      // closing Google's account picker is not an error
-      if (!/cancel|popup-closed|12501|\[16\]/i.test(message)) setError(message);
+      // Android's account picker reports "[16] Cancelled by user" both when it is closed and
+      // when it drops out on its own, so never fail silently: say it didn't finish.
+      setError(
+        /cancel|popup-closed|12501|\[16\]/i.test(message)
+          ? "Sign-in didn't finish. Tap Continue with Google to try again."
+          : message,
+      );
     } finally {
+      delete document.documentElement.dataset.signingIn;
       setBusy(false);
     }
   }
