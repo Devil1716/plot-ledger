@@ -16,10 +16,10 @@ async function signIn(page: Page, account: string, expectLedger = true) {
   await expect(page.getByTestId("entry-transition")).toHaveCount(0, { timeout: 5000 });
 }
 
-/** The ledger has no visible "Add payment" button (pull down instead); keyboard / screen readers use this. */
+/** Opens the pay flow from the "Add payment" button by keyboard (pull-down is the other way in). */
 async function openPayByKeyboard(page: Page) {
   const button = page.getByTestId("add-payment");
-  await expect(button).toHaveAccessibleName("Record a payment");
+  await expect(button).toHaveAccessibleName("Add payment");
   await button.focus();
   await page.keyboard.press("Enter");
 }
@@ -55,7 +55,7 @@ test("everyone pays only for themselves and sees everyone's shares", async ({ br
   // the landing page carries no payment list and no visible "Add payment" button
   await expect(adminPage.getByTestId("recent-payments")).toHaveCount(0);
   await expect(adminPage.getByText("Recent payments")).toHaveCount(0);
-  await expect(adminPage.getByRole("button", { name: "Add payment" })).toHaveCount(0);
+  await expect(adminPage.getByRole("button", { name: "Add payment" })).toBeVisible();
   await expect(adminPage.getByRole("main").getByRole("link", { name: "History" })).toHaveCount(0);
 
   // the admin is linked to Ananya and can only record Ananya's money
@@ -240,4 +240,50 @@ test("an admin makes another member an admin and can revoke it, but never the la
   await expect(page.getByTestId("audit-list")).toContainText("an admin");
   await expect(page.getByTestId("audit-list")).toContainText("as admin");
   await context.close();
+});
+
+test("an admin records a payment on behalf of a member", async ({ browser }) => {
+  const adminContext = await browser.newContext();
+  const adminPage = await adminContext.newPage();
+  await signIn(adminPage, ADMIN);
+  await adminPage.getByRole("button", { name: "Add payment" }).click();
+  const flow = adminPage.getByTestId("pay-flow");
+  const picker = flow.getByTestId("paying-for");
+  await expect(picker).toBeVisible();
+  // defaults to the admin themselves
+  await expect(flow.getByTestId("pay-for-ananya")).toHaveAttribute("aria-checked", "true");
+  await flow.getByTestId("pay-for-rohan").click();
+  await expect(flow.getByTestId("pay-as")).toContainText("Rohan Mehta");
+  for (const char of "50000") await flow.getByTestId(`key-${char}`).click();
+  await flow.getByLabel("Note").fill("Cash handed to Ananya");
+  await flow.getByRole("slider", { name: "slide to pay ₹50,000" }).press("Enter");
+  await expect(flow.getByTestId("payment-done")).toContainText("Rohan Mehta");
+  await flow.getByTestId("payment-done").click();
+  await expect(adminPage.getByTestId("share-rohan")).toContainText("₹50,000 paid");
+
+  await adminPage.getByTestId("nav-history").click();
+  const entry = adminPage.getByTestId("history-list").locator("li", { hasText: "Cash handed to Ananya" });
+  await expect(entry.getByTestId("added-by")).toHaveText("Added by Ananya Iyer");
+  await expect(entry.getByRole("button", { name: "Delete" })).toBeVisible();
+  await expect(adminPage.getByTestId("audit-list")).toContainText("added by Ananya Iyer");
+
+  // the member sees it but can't change or remove what the admin added; they have no picker
+  const memberContext = await browser.newContext();
+  const memberPage = await memberContext.newPage();
+  await signIn(memberPage, MEMBER);
+  await memberPage.getByTestId("nav-history").click();
+  const seen = memberPage.getByTestId("history-list").locator("li", { hasText: "Cash handed to Ananya" });
+  await expect(seen.getByTestId("added-by")).toHaveText("Added by Ananya Iyer");
+  await expect(seen.getByRole("button", { name: "Delete" })).toHaveCount(0);
+  await expect(seen.getByRole("button", { name: "Edit" })).toHaveCount(0);
+  await memberPage.getByTestId("nav-ledger").click();
+  await memberPage.getByRole("button", { name: "Add payment" }).click();
+  await expect(memberPage.getByTestId("pay-flow").getByTestId("paying-for")).toHaveCount(0);
+  await memberContext.close();
+
+  // the admin removes the entry they added
+  await entry.getByRole("button", { name: "Delete" }).click();
+  await adminPage.getByRole("button", { name: "Delete payment" }).click();
+  await expect(adminPage.getByTestId("history-list")).not.toContainText("Cash handed to Ananya");
+  await adminContext.close();
 });

@@ -228,7 +228,7 @@ describe("reading the ledger", () => {
   });
 });
 
-describe("recording payments: only for yourself", () => {
+describe("recording payments: yourself, or (admins) any approved member", () => {
   beforeEach(async () => {
     await seedLedger();
   });
@@ -248,11 +248,25 @@ describe("recording payments: only for yourself", () => {
     await assertFails(setDoc(doc(db, "payments", "pay3"), payment("suresh", MEMBER_UID)));
   });
 
-  it("denies the admin recording money for somebody else", async () => {
+  it("lets an admin record for an approved member on their behalf, with an audit entry", async () => {
     const db = adminDb();
+    const batch = writeBatch(db);
+    batch.set(doc(db, "payments", "behalf1"), payment("rohan", ADMIN_UID));
+    batch.set(
+      doc(db, "audit", "behalf1-audit"),
+      auditEntry({ entityId: "behalf1", actorUid: ADMIN_UID, actorName: "Ananya Iyer", summary: "Recorded for Rohan (added by Ananya)" }),
+    );
+    await assertSucceeds(batch.commit());
+  });
+
+  it("denies an admin recording for people who aren't approved members, or posing as the member", async () => {
+    const db = adminDb();
+    // kavita / suresh are roster people with no linked account
     await assertFails(setDoc(doc(db, "payments", "pay1"), payment("kavita", ADMIN_UID)));
-    await assertFails(setDoc(doc(db, "payments", "pay2"), payment("rohan", ADMIN_UID)));
     await assertFails(setDoc(doc(db, "payments", "pay3"), payment("suresh", ADMIN_UID)));
+    // createdBy must stay the admin
+    await assertFails(setDoc(doc(db, "payments", "pay4"), payment("rohan", MEMBER_UID, { updatedBy: ADMIN_UID })));
+    await assertFails(setDoc(doc(db, "payments", "pay5"), payment("rohan", MEMBER_UID)));
   });
 
   it("denies an unlinked account recording anything", async () => {
@@ -323,6 +337,16 @@ describe("editing and deleting payments", () => {
   it("lets the creator delete their own recent payment", async () => {
     await assertSucceeds(deleteDoc(doc(memberDb(), "payments", "own-new")));
   });
+
+  it("lets an admin edit (24h) and delete what they added for a member; the member can't", async () => {
+    await seedPayment("behalf-new", "rohan", ADMIN_UID, new Date(Date.now() - HOURS));
+    await seedPayment("behalf-old", "rohan", ADMIN_UID, new Date(Date.now() - 30 * HOURS));
+    await assertFails(edit(memberDb(), "behalf-new", { note: "mine?", updatedBy: MEMBER_UID }));
+    await assertFails(deleteDoc(doc(memberDb(), "payments", "behalf-new")));
+    await assertSucceeds(edit(adminDb(), "behalf-new", { note: "fixed", updatedBy: ADMIN_UID }));
+    await assertFails(edit(adminDb(), "behalf-old", { note: "late", updatedBy: ADMIN_UID }));
+    await assertSucceeds(deleteDoc(doc(adminDb(), "payments", "behalf-old")));
+  });
 });
 
 describe("audit trail", () => {
@@ -362,6 +386,20 @@ describe("audit trail", () => {
     batch.set(doc(db, "payments", "pay2"), payment("rohan", MEMBER_UID));
     batch.set(doc(db, "audit", "a4"), auditEntry({ entityId: "pay2", actorName: "Someone Else" }));
     await assertFails(batch.commit());
+  });
+
+  it("lets an admin log deleting a payment they added for a member, but not a member's own", async () => {
+    await seedPayment("by-admin", "rohan", ADMIN_UID, new Date());
+    await seedPayment("by-rohan", "rohan", MEMBER_UID, new Date());
+    const db = adminDb();
+    const ok = writeBatch(db);
+    ok.delete(doc(db, "payments", "by-admin"));
+    ok.set(doc(db, "audit", "del-ok"), auditEntry({ action: "delete", entityId: "by-admin", actorUid: ADMIN_UID, actorName: "Ananya Iyer" }));
+    await assertSucceeds(ok.commit());
+    const bad = writeBatch(db);
+    bad.delete(doc(db, "payments", "by-rohan"));
+    bad.set(doc(db, "audit", "del-bad"), auditEntry({ action: "delete", entityId: "by-rohan", actorUid: ADMIN_UID, actorName: "Ananya Iyer" }));
+    await assertFails(bad.commit());
   });
 
   it("lets an admin log roster changes", async () => {

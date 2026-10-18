@@ -31,3 +31,20 @@ describe("canDeletePayment", () => {
     expect(canDeletePayment(own, null, "rohan")).toBe(false);
   });
 });
+
+describe("payments an admin added for a member", () => {
+  const behalf = { createdBy: "admin", personId: "rohan", createdAt: at(60_000) };
+  it("belong to the admin who added them, not to the member", () => {
+    expect(canEditPayment(behalf, "admin", "ananya", now, true)).toBe(true);
+    expect(canDeletePayment(behalf, "admin", "ananya", true)).toBe(true);
+    expect(canEditPayment(behalf, "rohan-uid", "rohan", now, false)).toBe(false);
+    expect(canDeletePayment(behalf, "rohan-uid", "rohan", false)).toBe(false);
+    // once no longer an admin, they can't touch it
+    expect(canDeletePayment(behalf, "admin", "ananya", false)).toBe(false);
+  });
+  it("never let an admin touch an entry a member added", () => {
+    const own = { createdBy: "rohan-uid", personId: "rohan", createdAt: at(60_000) };
+    expect(canDeletePayment(own, "admin", "ananya", true)).toBe(false);
+    expect(canEditPayment(own, "admin", "ananya", now, true)).toBe(false);
+  });
+});

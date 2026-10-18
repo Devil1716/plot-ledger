@@ -1,5 +1,6 @@
 "use client";
 
+import { Plus } from "lucide-react";
 import Link from "next/link";
 import { memo, useCallback, useState } from "react";
 import { PayFlow } from "@/components/pay-flow";
@@ -166,16 +167,19 @@ export function Dashboard() {
 
         <div className="mt-5 flex flex-wrap gap-2">
           {canPay ? (
-            // Pull down is the way in; this stays for keyboard and screen-reader users
-            // (visually hidden until focused).
-            <button
+            // pull-down still works; this is the visible way in (and the keyboard / screen-reader one)
+            <motion.button
               type="button"
               data-testid="add-payment"
+              whileTap={{ scale: 0.97 }}
               onClick={() => setOpen(true)}
-              className="sr-only focus-visible:not-sr-only focus-visible:flex focus-visible:h-12 focus-visible:items-center focus-visible:rounded-full focus-visible:bg-white focus-visible:px-5 focus-visible:text-sm focus-visible:font-semibold focus-visible:text-[#0b0f1a] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              className="flex h-12 items-center gap-2 rounded-full bg-white pr-5 pl-2 text-[15px] font-semibold text-black hover:bg-[#ececec] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
             >
-              Record a payment
-            </button>
+              <span aria-hidden className="grid size-8 place-items-center rounded-full bg-black text-white">
+                <Plus className="size-4" />
+              </span>
+              Add payment
+            </motion.button>
           ) : (
             <span className="flex h-10 items-center rounded-full bg-white/10 px-4 text-sm font-medium ring-1 ring-white/15">
               Not linked · view only

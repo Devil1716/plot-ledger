@@ -20,9 +20,10 @@ rules_version = '2';
 //     create it naming only itself (one-time "claim admin"). After that only admins can
 //     change the admin list: add or revoke admins, never leaving zero.
 //
-// Payments: create own only. Edit own only, by the person who created the entry, within
-// 24 hours. Delete own only, by its creator, at any time; nobody (admins included)
-// deletes someone else's. Every write carries an audit entry; audit entries never change.
+// Payments: members create only for themselves; admins also for any approved member (the
+// entry keeps createdBy = the admin). Whoever added an entry may edit it within 24 hours and
+// delete it at any time; nobody edits or deletes an entry someone else added. Every write
+// carries an audit entry; audit entries never change.
 // There is no public read or write.
 //
 // ===============================================================
@@ -48,15 +49,15 @@ rules_version = '2';
 // payments/{auto-id}
 //   - personId, amountPaise (int, 1..10 crore rupees), date, note <= 500,
 //     createdBy, updatedBy, createdAt, updatedAt
-//   Read: members and admins. Create: a member, for their own person only.
-//   Update: the creator, still linked to the same person, within 24h.
-//   Delete: the creator, still linked to the same person, any time (audited).
+//   Read: members and admins. Create: a member for their own person; an admin also for
+//   any approved member (createdBy stays the admin's uid).
+//   Update: whoever added it, within 24h. Delete: whoever added it, any time (audited).
 //
 // audit/{auto-id}
 //   - action, entity ("payment" | "person" | "access"), entityId, actorUid, actorName,
 //     summary, at
-//   Create: payment entries by the member whose payment it describes (checked against
-//   the payment write in the same batch); person / access entries by admins. Immutable.
+//   Create: payment entries by whoever wrote that payment in the same batch (a member for
+//   themselves, or an admin); person / access entries by admins. Immutable.
 //
 // ===============================================================
 
@@ -109,16 +110,31 @@ service cloud.firestore {
       return /databases/$(database)/documents/payments/$(paymentId);
     }
 
-    // own payment: created by the signer, for the signer's person
-    function ownsPayment(data) {
-      return isLinked()
-        && data.createdBy == request.auth.uid
-        && data.personId == myPersonId();
+    // An approved member: a roster person linked both ways to a signed-in account.
+    function isApprovedPerson(personId) {
+      return isValidPersonId(personId)
+        && get(personPath(personId)).data.linkedUid is string
+        && exists(userPath(get(personPath(personId)).data.linkedUid))
+        && get(userPath(get(personPath(personId)).data.linkedUid)).data.personId == personId;
     }
 
-    // own payment, still editable: as above and < 24h old
-    function ownsEditablePayment(data) {
-      return ownsPayment(data)
+    // Who may record money for a person: members for themselves; admins for any approved member.
+    function mayRecordFor(personId) {
+      return (isLinked() && personId == myPersonId())
+        || (isAdmin() && isApprovedPerson(personId));
+    }
+
+    // A payment the signer added: they created it, and they could record it (it is theirs, or
+    // they are an admin). Members never touch admin-added or others' entries; admins never touch
+    // entries members added themselves.
+    function addedByMe(data) {
+      return data.createdBy == request.auth.uid
+        && ((isLinked() && data.personId == myPersonId()) || isAdmin());
+    }
+
+    // ...and still editable: < 24h old
+    function addedByMeEditable(data) {
+      return addedByMe(data)
         && request.time < data.createdAt + duration.value(24, 'h');
     }
 
@@ -248,13 +264,14 @@ service cloud.firestore {
           data.action in ['create', 'update']
           && existsAfter(paymentPath(data.entityId))
           && getAfter(paymentPath(data.entityId)).data.updatedBy == request.auth.uid
-          && getAfter(paymentPath(data.entityId)).data.personId == myPersonId()
+          && (isAdmin() || getAfter(paymentPath(data.entityId)).data.personId == myPersonId())
         )
         || (
           data.action == 'delete'
           && exists(paymentPath(data.entityId))
           && !existsAfter(paymentPath(data.entityId))
-          && get(paymentPath(data.entityId)).data.personId == myPersonId()
+          && get(paymentPath(data.entityId)).data.createdBy == request.auth.uid
+          && (isAdmin() || get(paymentPath(data.entityId)).data.personId == myPersonId())
         );
     }
 
@@ -316,16 +333,15 @@ service cloud.firestore {
     match /payments/{paymentId} {
       allow read: if canReadLedger();
 
-      // only for yourself: admins included, nobody records money for someone else
-      allow create: if isLinked()
-        && isValidPayment(request.resource.data)
-        && request.resource.data.personId == myPersonId()
+      // members record only for themselves; admins also for any approved member (on their behalf)
+      allow create: if isValidPayment(request.resource.data)
+        && mayRecordFor(request.resource.data.personId)
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.updatedBy == request.auth.uid
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time;
 
-      allow update: if ownsEditablePayment(resource.data)
+      allow update: if addedByMeEditable(resource.data)
         && isValidPayment(request.resource.data)
         && request.resource.data.personId == resource.data.personId
         && request.resource.data.createdBy == resource.data.createdBy
@@ -333,9 +349,10 @@ service cloud.firestore {
         && request.resource.data.updatedBy == request.auth.uid
         && request.resource.data.updatedAt == request.time;
 
-      // your own entries can be removed at any time (the audit trail keeps the record);
-      // nobody, admins included, removes someone else's
-      allow delete: if ownsPayment(resource.data);
+      // whoever added an entry can remove it at any time (the audit trail keeps the record):
+      // members their own, admins the ones they added for others; nobody removes an entry
+      // someone else added
+      allow delete: if addedByMe(resource.data);
     }
 
     match /audit/{auditId} {
@@ -343,7 +360,7 @@ service cloud.firestore {
       allow create: if isValidAudit(request.resource.data)
         && request.resource.data.at == request.time
         && (
-          (request.resource.data.entity == 'payment' && isLinked() && paymentAuditMatches(request.resource.data))
+          (request.resource.data.entity == 'payment' && (isLinked() || isAdmin()) && paymentAuditMatches(request.resource.data))
           || (request.resource.data.entity != 'payment' && isAdmin())
         );
       allow update: if false;

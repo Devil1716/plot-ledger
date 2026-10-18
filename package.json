@@ -1,6 +1,6 @@
 {
   "name": "plot-ledger",
-  "version": "1.5.4",
+  "version": "1.6.0",
   "nativeBuild": 106,
   "private": true,
   "engines": {

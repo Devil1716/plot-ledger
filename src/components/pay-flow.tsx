@@ -39,6 +39,7 @@ import {
 } from "@/lib/keypad";
 import type { PersonRecord } from "@/lib/records";
 import { createPayment } from "@/lib/writes";
+import { Avatar } from "@/components/avatar";
 
 type Step = "amount" | "success";
 // minimal black & white, matching the Welcome screen
@@ -69,11 +70,20 @@ export function PayFlow({ open, onClose }: { open: boolean; onClose: () => void 
 }
 
 function PayFlowInner({ onClose }: { onClose: () => void }) {
-  const { people, payments, shares, profile, myPersonId } = useLedger();
+  const { people, payments, shares, profile, myPersonId, isAdmin, accounts } = useLedger();
   const [step, setStep] = useState<Step>("amount");
   const [savedPaise, setSavedPaise] = useState<bigint>(0n);
-  // You can only ever pay for yourself (Firestore rules enforce the same).
-  const person = people.find((item) => item.id === myPersonId) ?? null;
+  // Members pay only for themselves; admins may also record for any approved member
+  // (a roster person linked both ways to an account). Firestore rules enforce the same.
+  const payees = isAdmin
+    ? people.filter(
+        (item) =>
+          item.id === myPersonId ||
+          (item.linkedUid && accounts.some((account) => account.uid === item.linkedUid && account.personId === item.id)),
+      )
+    : [];
+  const [forId, setForId] = useState<string | null>(myPersonId ?? payees[0]?.id ?? null);
+  const person = people.find((item) => item.id === (isAdmin ? forId : myPersonId)) ?? null;
 
   useEffect(() => {
     const previous = document.body.style.overflow;
@@ -147,6 +157,9 @@ function PayFlowInner({ onClose }: { onClose: () => void }) {
           <AmountSheet
             key="sheet"
             person={person}
+            isSelf={person.id === myPersonId}
+            payees={payees.length > 1 ? payees : undefined}
+            onPickPayee={setForId}
             onClose={onClose}
             paidPaise={paidBy(person.id)}
             remainingPaise={remaining}
@@ -198,6 +211,9 @@ const OPS: { key: Operator; label: string }[] = [
 
 function AmountSheet({
   person,
+  isSelf,
+  payees,
+  onPickPayee,
   paidPaise,
   remainingPaise,
   onSave,
@@ -205,6 +221,10 @@ function AmountSheet({
   onClose,
 }: {
   person: PersonRecord;
+  isSelf: boolean;
+  /** admins only: who the payment can be recorded for */
+  payees?: PersonRecord[];
+  onPickPayee: (personId: string) => void;
   paidPaise: number;
   remainingPaise: number;
   onSave: (paise: bigint, date: Date, note: string) => Promise<void>;
@@ -342,8 +362,41 @@ function AmountSheet({
           >
             {initialsOf(person.name)}
           </span>
-          You ({person.name.split(" ")[0]}) · {formatInrFromPaise(paidPaise)} paid so far
+          {isSelf ? `You (${person.name.split(" ")[0]})` : person.name} · {formatInrFromPaise(paidPaise)} paid so far
         </p>
+        {payees ? (
+          <div className="mt-2" data-no-swipe>
+            <p className="text-center text-[11px] tracking-wide text-[#8a8a8a] uppercase" id="paying-for-label">
+              Paying for
+            </p>
+            <div
+              role="radiogroup"
+              aria-labelledby="paying-for-label"
+              data-testid="paying-for"
+              className="-mx-5 mt-1.5 flex gap-2 overflow-x-auto px-5 pb-1 [scrollbar-width:none]"
+            >
+              {payees.map((payee) => {
+                const selected = payee.id === person.id;
+                return (
+                  <button
+                    key={payee.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    data-testid={`pay-for-${payee.id}`}
+                    onClick={() => onPickPayee(payee.id)}
+                    className={`flex h-12 shrink-0 items-center gap-2 rounded-full pr-4 pl-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-white ${
+                      selected ? "bg-white text-black" : "bg-[#1a1a1a] text-white ring-1 ring-white/10"
+                    }`}
+                  >
+                    <Avatar name={payee.name} photoURL={payee.photoURL} color={payee.color} className="size-9" />
+                    {payee.name.split(" ")[0]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
 
         {/* amount */}
         <div className="relative mt-4 flex flex-1 flex-col items-center justify-center select-none" data-testid="pay-swipe-area">

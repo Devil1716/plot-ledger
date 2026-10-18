@@ -22,7 +22,7 @@ import { deletePayment } from "@/lib/writes";
 import { canDeletePayment, canEditPayment, editTimeLeft } from "@/lib/permissions";
 
 export function HistoryView() {
-  const { payments, people, audit, profile, myPersonId, dataReady } = useLedger();
+  const { payments, people, audit, profile, myPersonId, dataReady, isAdmin } = useLedger();
   const [now] = useState(() => Date.now());
   const [filter, setFilter] = useState<string>("all");
   const [editing, setEditing] = useState<PaymentRecord | null>(null);
@@ -53,7 +53,7 @@ export function HistoryView() {
         <div>
           <h1 className="font-heading text-3xl">Payment history</h1>
           <p className="text-muted-foreground mt-1 max-w-xl text-sm">
-            Every rupee is listed, including the homeowner. You can fix or remove your own entry for 24 hours; after that it is permanent. Every change stays in the audit trail.
+            Every rupee is listed, including the homeowner. Whoever added an entry can fix it for 24 hours and remove it any time. Admins can add payments for members. Every change stays in the audit trail.
           </p>
         </div>
       </header>
@@ -78,6 +78,11 @@ export function HistoryView() {
         <motion.ul variants={listVariants} initial="hidden" animate="show" className="grid gap-3" data-testid="history-list">
           {visible.map((payment) => {
             const person = people.find((item) => item.id === payment.personId);
+            // recorded by someone other than the member (an admin, on their behalf)
+            const addedBy =
+              person?.linkedUid && payment.createdBy !== person.linkedUid
+                ? (people.find((item) => item.linkedUid === payment.createdBy)?.name ?? "an admin")
+                : null;
             return (
               <motion.li variants={sideItemVariants} key={payment.id} data-testid={`payment-${payment.id}`} className="bg-card rounded-xl p-4 ring-1 ring-foreground/10">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -89,12 +94,17 @@ export function HistoryView() {
                     </div>
                     <p className="font-heading mt-2 text-2xl">{formatInrFromPaise(payment.amountPaise)}</p>
                     <p className="text-muted-foreground text-sm">{formatLedgerDate(payment.date)}</p>
+                    {addedBy ? (
+                      <p className="text-muted-foreground mt-1 text-xs" data-testid="added-by">
+                        Added by {addedBy}
+                      </p>
+                    ) : null}
                     {payment.note ? <p className="mt-2 text-sm">{payment.note}</p> : null}
                   </div>
-                  {canDeletePayment(payment, profile?.uid, myPersonId) ? (
+                  {canDeletePayment(payment, profile?.uid, myPersonId, isAdmin) ? (
                     <div className="flex flex-col items-end gap-1.5">
                       <div className="flex gap-2">
-                        {canEditPayment(payment, profile?.uid, myPersonId, now) ? (
+                        {canEditPayment(payment, profile?.uid, myPersonId, now, isAdmin) ? (
                           <Button variant="outline" className="h-12 min-w-12 px-4" onClick={() => setEditing(payment)}>
                             Edit
                           </Button>
@@ -103,7 +113,7 @@ export function HistoryView() {
                           Delete
                         </Button>
                       </div>
-                      {canEditPayment(payment, profile?.uid, myPersonId, now) ? (
+                      {canEditPayment(payment, profile?.uid, myPersonId, now, isAdmin) ? (
                         <span className="text-muted-foreground text-xs">
                           Editable for {Math.max(1, Math.ceil(editTimeLeft(payment, now) / 3_600_000))}h more
                         </span>

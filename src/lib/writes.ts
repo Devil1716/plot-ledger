@@ -81,7 +81,13 @@ export async function createPayment(
     action: "create",
     entity: "payment",
     entityId: ref.id,
-    summary: paymentSummary("Recorded", person.name, input.amountPaise, input.date, input.note),
+    summary: paymentSummary(
+      "Recorded",
+      person.linkedUid && person.linkedUid !== actor.uid ? `${person.name} (added by ${actor.name})` : person.name,
+      input.amountPaise,
+      input.date,
+      input.note,
+    ),
   });
   batch.set(trail.ref, trail.data);
   await batch.commit();
